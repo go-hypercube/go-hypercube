@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,4 +41,24 @@ RATIO=3.14
 	assert.Equal(t, 3.14, cfg.ReadFloat("RATIO"))
 	assert.Equal(t, "", cfg.ReadString("MISSING"))
 	assert.Equal(t, int64(0), cfg.ReadInt("MISSING"))
+}
+
+func TestNewEnvConfigFromReader(t *testing.T) {
+	content := `NAME=hypercube
+PORT=8080
+RATIO=3.14
+`
+	cfg := NewEnvConfigFromReader(strings.NewReader(content))
+
+	assert.Equal(t, "hypercube", cfg.ReadString("NAME"))
+	assert.Equal(t, int64(8080), cfg.ReadInt("PORT"))
+	assert.Equal(t, 3.14, cfg.ReadFloat("RATIO"))
+	assert.Equal(t, "", cfg.ReadString("MISSING"))
+	assert.Equal(t, int64(0), cfg.ReadInt("MISSING"))
+}
+
+func TestNewEnvConfigFromReader_InvalidContent(t *testing.T) {
+	assert.Panics(t, func() {
+		NewEnvConfigFromReader(strings.NewReader(`this is not valid env=format="`))
+	})
 }

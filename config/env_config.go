@@ -1,8 +1,8 @@
 package config
 
 import (
+	"io"
 	"strconv"
-	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -20,7 +20,15 @@ func NewEnvConfig(filePath string) Config {
 }
 
 func NewEnvConfigFromString(content string) Config {
-	data, err := godotenv.Parse(strings.NewReader(content))
+	data, err := godotenv.Unmarshal(content)
+	if err != nil {
+		panic(err)
+	}
+	return &envConfig{data: data}
+}
+
+func NewEnvConfigFromReader(r io.Reader) Config {
+	data, err := godotenv.Parse(r)
 	if err != nil {
 		panic(err)
 	}

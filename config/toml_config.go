@@ -1,6 +1,7 @@
 package config
 
 import (
+	"io"
 	"os"
 
 	"github.com/pelletier/go-toml/v2"
@@ -21,6 +22,14 @@ func NewTomlConfig(filePath string) Config {
 func NewTomlConfigFromString(content string) Config {
 	var data map[string]any
 	if err := toml.Unmarshal([]byte(content), &data); err != nil {
+		panic(err)
+	}
+	return &tomlConfig{data: data}
+}
+
+func NewTomlConfigFromReader(r io.Reader) Config {
+	var data map[string]any
+	if err := toml.NewDecoder(r).Decode(&data); err != nil {
 		panic(err)
 	}
 	return &tomlConfig{data: data}

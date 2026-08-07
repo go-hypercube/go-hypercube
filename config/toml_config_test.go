@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -43,3 +44,26 @@ ratio = 3.14
 	assert.Equal(t, "", cfg.ReadString("missing"))
 	assert.Equal(t, int64(0), cfg.ReadInt("missing"))
 }
+
+func TestNewTomlConfigFromReader(t *testing.T) {
+	content := `
+name = "hypercube"
+port = 8080
+ratio = 3.14
+`
+	cfg := NewTomlConfigFromReader(strings.NewReader(content))
+
+	assert.Equal(t, "hypercube", cfg.ReadString("name"))
+	assert.Equal(t, int64(8080), cfg.ReadInt("port"))
+	assert.Equal(t, 3.14, cfg.ReadFloat("ratio"))
+	assert.Equal(t, "", cfg.ReadString("missing"))
+	assert.Equal(t, int64(0), cfg.ReadInt("missing"))
+}
+
+func TestNewTomlConfigFromReader_InvalidContent(t *testing.T) {
+	assert.Panics(t, func() {
+		NewTomlConfigFromReader(strings.NewReader(`not = [valid toml`))
+	})
+}
+
+

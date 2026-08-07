@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 )
 
@@ -20,6 +21,14 @@ func NewJsonConfig(filePath string) Config {
 func NewJsonConfigFromString(content string) Config {
 	var data map[string]any
 	if err := json.Unmarshal([]byte(content), &data); err != nil {
+		panic(err)
+	}
+	return &jsonConfig{data: data}
+}
+
+func NewJsonConfigFromReader(r io.Reader) Config {
+	var data map[string]any
+	if err := json.NewDecoder(r).Decode(&data); err != nil {
 		panic(err)
 	}
 	return &jsonConfig{data: data}

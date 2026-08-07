@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,6 @@ func TestJsonConfig(t *testing.T) {
 	assert.Equal(t, int64(0), cfg.ReadInt("missing"))
 }
 
-
 func TestJsonConfigFromString(t *testing.T) {
 	content := `{
 		"name": "myapp",
@@ -43,4 +43,25 @@ func TestJsonConfigFromString(t *testing.T) {
 	assert.Equal(t, 3.14, cfg.ReadFloat("ratio"))
 	assert.Equal(t, "", cfg.ReadString("missing"))
 	assert.Equal(t, int64(0), cfg.ReadInt("missing"))
+}
+
+func TestNewJsonConfigFromReader(t *testing.T) {
+	content := `{
+		"name": "hypercube",
+		"port": 8080,
+		"ratio": 3.14
+	}`
+	cfg := NewJsonConfigFromReader(strings.NewReader(content))
+
+	assert.Equal(t, "hypercube", cfg.ReadString("name"))
+	assert.Equal(t, int64(8080), cfg.ReadInt("port"))
+	assert.Equal(t, 3.14, cfg.ReadFloat("ratio"))
+	assert.Equal(t, "", cfg.ReadString("missing"))
+	assert.Equal(t, int64(0), cfg.ReadInt("missing"))
+}
+
+func TestNewJsonConfigFromReader_InvalidContent(t *testing.T) {
+	assert.Panics(t, func() {
+		NewJsonConfigFromReader(strings.NewReader(`{invalid json`))
+	})
 }
