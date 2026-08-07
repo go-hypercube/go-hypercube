@@ -20,8 +20,9 @@ func TestJsonConfig(t *testing.T) {
 	err := os.WriteFile(path, []byte(content), 0o644)
 	require.NoError(t, err)
 
-	cfg := NewJsonConfig(path)
+	cfg, err := NewJsonConfig(path)
 	require.NotNil(t, cfg)
+	assert.NoError(t, err)
 
 	assert.Equal(t, "hypercube", cfg.ReadString("name"))
 	assert.Equal(t, int64(8080), cfg.ReadInt("port"))
@@ -32,12 +33,13 @@ func TestJsonConfig(t *testing.T) {
 
 func TestJsonConfigFromString(t *testing.T) {
 	content := `{
-		"name": "myapp",
+		"name": "hypercube",
 		"port": 8080,
 		"ratio": 3.14
 	}`
-	cfg := NewJsonConfigFromString(content)
+	cfg, err := NewJsonConfigFromString(content)
 
+	assert.NoError(t, err)
 	assert.Equal(t, "hypercube", cfg.ReadString("name"))
 	assert.Equal(t, int64(8080), cfg.ReadInt("port"))
 	assert.Equal(t, 3.14, cfg.ReadFloat("ratio"))
@@ -51,8 +53,10 @@ func TestNewJsonConfigFromReader(t *testing.T) {
 		"port": 8080,
 		"ratio": 3.14
 	}`
-	cfg := NewJsonConfigFromReader(strings.NewReader(content))
 
+	cfg, err := NewJsonConfigFromReader(strings.NewReader(content))
+
+	assert.NoError(t, err)
 	assert.Equal(t, "hypercube", cfg.ReadString("name"))
 	assert.Equal(t, int64(8080), cfg.ReadInt("port"))
 	assert.Equal(t, 3.14, cfg.ReadFloat("ratio"))
@@ -61,7 +65,7 @@ func TestNewJsonConfigFromReader(t *testing.T) {
 }
 
 func TestNewJsonConfigFromReader_InvalidContent(t *testing.T) {
-	assert.Panics(t, func() {
-		NewJsonConfigFromReader(strings.NewReader(`{invalid json`))
-	})
+	cfg, err := NewJsonConfigFromReader(strings.NewReader(`{invalid json`))
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
 }

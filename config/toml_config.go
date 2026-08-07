@@ -11,28 +11,28 @@ type tomlConfig struct {
 	data map[string]any
 }
 
-func NewTomlConfig(filePath string) Config {
+func NewTomlConfig(filePath string) (Config, error) {
 	b, err := os.ReadFile(filePath)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	return NewTomlConfigFromString(string(b))
 }
 
-func NewTomlConfigFromString(content string) Config {
+func NewTomlConfigFromString(content string) (Config, error) {
 	var data map[string]any
 	if err := toml.Unmarshal([]byte(content), &data); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &tomlConfig{data: data}
+	return &tomlConfig{data: data}, nil
 }
 
-func NewTomlConfigFromReader(r io.Reader) Config {
+func NewTomlConfigFromReader(r io.Reader) (Config, error) {
 	var data map[string]any
 	if err := toml.NewDecoder(r).Decode(&data); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &tomlConfig{data: data}
+	return &tomlConfig{data: data}, nil
 }
 
 func (c *tomlConfig) ReadInt(key string) int64 {

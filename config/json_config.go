@@ -10,28 +10,28 @@ type jsonConfig struct {
 	data map[string]any
 }
 
-func NewJsonConfig(filePath string) Config {
+func NewJsonConfig(filePath string) (Config, error) {
 	b, err := os.ReadFile(filePath)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	return NewJsonConfigFromString(string(b))
 }
 
-func NewJsonConfigFromString(content string) Config {
+func NewJsonConfigFromString(content string) (Config, error) {
 	var data map[string]any
 	if err := json.Unmarshal([]byte(content), &data); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &jsonConfig{data: data}
+	return &jsonConfig{data: data}, nil
 }
 
-func NewJsonConfigFromReader(r io.Reader) Config {
+func NewJsonConfigFromReader(r io.Reader) (Config, error) {
 	var data map[string]any
 	if err := json.NewDecoder(r).Decode(&data); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &jsonConfig{data: data}
+	return &jsonConfig{data: data}, nil
 }
 
 func (c *jsonConfig) ReadInt(key string) int64 {

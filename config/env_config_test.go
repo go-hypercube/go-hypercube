@@ -19,7 +19,8 @@ RATIO=3.14
 	err := os.WriteFile(path, []byte(content), 0o644)
 	require.NoError(t, err)
 
-	cfg := NewEnvConfig(path)
+	cfg, err := NewEnvConfig(path)
+	assert.NoError(t, err)
 	require.NotNil(t, cfg)
 
 	assert.Equal(t, "hypercube", cfg.ReadString("NAME"))
@@ -34,8 +35,9 @@ func TestEnvConfigFromString(t *testing.T) {
 PORT=8080
 RATIO=3.14
 `
-	cfg := NewEnvConfigFromString(content)
+	cfg, err := NewEnvConfigFromString(content)
 
+	assert.NoError(t, err)
 	assert.Equal(t, "hypercube", cfg.ReadString("NAME"))
 	assert.Equal(t, int64(8080), cfg.ReadInt("PORT"))
 	assert.Equal(t, 3.14, cfg.ReadFloat("RATIO"))
@@ -48,8 +50,9 @@ func TestNewEnvConfigFromReader(t *testing.T) {
 PORT=8080
 RATIO=3.14
 `
-	cfg := NewEnvConfigFromReader(strings.NewReader(content))
+	cfg, err := NewEnvConfigFromReader(strings.NewReader(content))
 
+	assert.NoError(t, err)
 	assert.Equal(t, "hypercube", cfg.ReadString("NAME"))
 	assert.Equal(t, int64(8080), cfg.ReadInt("PORT"))
 	assert.Equal(t, 3.14, cfg.ReadFloat("RATIO"))
@@ -58,7 +61,7 @@ RATIO=3.14
 }
 
 func TestNewEnvConfigFromReader_InvalidContent(t *testing.T) {
-	assert.Panics(t, func() {
-		NewEnvConfigFromReader(strings.NewReader(`this is not valid env=format="`))
-	})
+	cfg, err := NewEnvConfigFromReader(strings.NewReader(`this is not valid env format"`))
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
 }

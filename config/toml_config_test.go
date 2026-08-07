@@ -20,8 +20,9 @@ ratio = 3.14
 	err := os.WriteFile(path, []byte(content), 0o644)
 	require.NoError(t, err)
 
-	cfg := NewTomlConfig(path)
+	cfg, err := NewTomlConfig(path)
 	require.NotNil(t, cfg)
+	assert.NoError(t, err)
 
 	assert.Equal(t, "hypercube", cfg.ReadString("name"))
 	assert.Equal(t, int64(8080), cfg.ReadInt("port"))
@@ -36,8 +37,9 @@ name = "hypercube"
 port = 8080
 ratio = 3.14
 `
-	cfg := NewTomlConfigFromString(content)
+	cfg, err := NewTomlConfigFromString(content)
 
+	assert.NoError(t, err)
 	assert.Equal(t, "hypercube", cfg.ReadString("name"))
 	assert.Equal(t, int64(8080), cfg.ReadInt("port"))
 	assert.Equal(t, 3.14, cfg.ReadFloat("ratio"))
@@ -51,8 +53,9 @@ name = "hypercube"
 port = 8080
 ratio = 3.14
 `
-	cfg := NewTomlConfigFromReader(strings.NewReader(content))
+	cfg, err := NewTomlConfigFromReader(strings.NewReader(content))
 
+	assert.NoError(t, err)
 	assert.Equal(t, "hypercube", cfg.ReadString("name"))
 	assert.Equal(t, int64(8080), cfg.ReadInt("port"))
 	assert.Equal(t, 3.14, cfg.ReadFloat("ratio"))
@@ -61,9 +64,7 @@ ratio = 3.14
 }
 
 func TestNewTomlConfigFromReader_InvalidContent(t *testing.T) {
-	assert.Panics(t, func() {
-		NewTomlConfigFromReader(strings.NewReader(`not = [valid toml`))
-	})
+	cfg, err := NewTomlConfigFromReader(strings.NewReader(`not = [valid toml`))
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
 }
-
-

@@ -11,28 +11,28 @@ type envConfig struct {
 	data map[string]string
 }
 
-func NewEnvConfig(filePath string) Config {
+func NewEnvConfig(filePath string) (Config, error) {
 	data, err := godotenv.Read(filePath)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &envConfig{data: data}
+	return &envConfig{data: data}, nil
 }
 
-func NewEnvConfigFromString(content string) Config {
+func NewEnvConfigFromString(content string) (Config, error) {
 	data, err := godotenv.Unmarshal(content)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &envConfig{data: data}
+	return &envConfig{data: data}, nil
 }
 
-func NewEnvConfigFromReader(r io.Reader) Config {
+func NewEnvConfigFromReader(r io.Reader) (Config, error) {
 	data, err := godotenv.Parse(r)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &envConfig{data: data}
+	return &envConfig{data: data}, nil
 }
 
 func (c *envConfig) ReadInt(key string) int64 {
