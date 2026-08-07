@@ -1,9 +1,8 @@
 // Package cache defines the portable cache contract used by the framework
 // and implemented by driver packages (Redis, Memcached, in-memory, etc).
 // It intentionally has no dependency on the rest of the framework, so a
-// driver repository only needs to import this package — not the whole
-// framework module — to implement Cache. This mirrors the split between
-// database/sql and database/sql/driver.
+// driver repository only needs to import this package and not the whole
+// framework module.
 package cache
 
 import (
