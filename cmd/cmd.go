@@ -1,41 +1,27 @@
-package plugin
+package cmd
 
 import (
 	"database/sql"
 
 	"github.com/go-hypercube/go-hypercube/cache"
-	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/internal/container"
-	"github.com/go-hypercube/go-hypercube/migration"
 )
 
-type Plugin interface {
-	ID() string
+type Command interface {
 	Name() string
-	Register(app App) error
-	Boot(app App) error
+	Run(App) error
 }
 
-// App is the subset of framework capabilities exposed to plugins. It is
+// App is the subset of framework capabilities exposed to Cmds. It is
 // implemented by the framework's concrete App type. This package does not
 // import the framework package — the framework imports this one — which
-// is what breaks the natural cycle between "App holds a list of Plugins"
-// and "Plugin methods receive an App."
+// is what breaks the natural cycle between "App holds a list of Cmds"
+// and "Cmd methods receive an App."
 type App interface {
 	DB() *sql.DB
 	Cache() cache.Cache
 
-	RegisterMigration(migrations ...migration.Migration)error
-	RegisterCommand(cmds ...cmd.Command)
-
 	Container() *container.ServiceContainer
-}
-
-// Bind registers instance under type T in app's service container,
-// optionally scoped by name. A later Bind with the same type and name
-// overwrites the previous binding.
-func Bind[T any](app App, instance T, name ...string) {
-	container.Bind(app.Container(), instance, name...)
 }
 
 // Resolve looks up a value of type T previously registered with Bind,
