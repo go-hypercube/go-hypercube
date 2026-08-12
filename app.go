@@ -12,21 +12,13 @@ import (
 	"github.com/go-hypercube/go-hypercube/plugin"
 )
 
-// Compile-time check that *App satisfies plugin.App, cmd.App. If this fails
-// to compile, App is missing (or has mismatched signatures for) a method
-// required by plugin.App or cmd.App.
-var (
-	_ plugin.App = (*App)(nil)
-	_ cmd.App    = (*App)(nil)
-)
-
 type App struct {
 	config     config.Config
 	database   *sql.DB
 	cache      cache.Cache
 	plugins    []plugin.Plugin
-	migrations []migration.Migration
-	cmds       []cmd.Command
+	migrations []*migration.Namespaced
+	cmds       []*cmd.Namespaced
 	services   *container.ServiceContainer
 }
 
@@ -48,9 +40,25 @@ func (app *App) UsePlugin(plugins ...plugin.Plugin) {
 }
 func (app *App) Plugins() []plugin.Plugin { return app.plugins }
 
-func (app *App) RegisterMigration(migrations ...migration.Migration) error {
-	app.migrations = append(app.migrations, migrations...)
+func (app *App) registerMigrationForNamespace(namespace string, migrations ...*migration.Migration) error {
+	namespacedMigrations := make([]*migration.Namespaced, len(migrations))
+	for i, m := range migrations {
+		namespacedMigrations[i] = migration.NewNamespaced(namespace, m)
+	}
+	app.migrations = append(app.migrations, namespacedMigrations...)
 	return nil
+}
+
+func (app *App) RegisterMigration(migrations ...*migration.Migration) error {
+	return app.registerMigrationForNamespace("owner", migrations...)
+}
+
+func (app *App) RegisterRawMigration(name, rawMigrationString string) error {
+	m, err := migration.ParseRawMigration(name, rawMigrationString)
+	if err != nil {
+		return err
+	}
+	return app.RegisterMigration(m)
 }
 
 func (app *App) RegisterMigrationFromFs(files embed.FS) error {
@@ -61,17 +69,42 @@ func (app *App) RegisterMigrationFromFs(files embed.FS) error {
 	return app.RegisterMigration(migrationFiles...)
 }
 
-func (app *App) Migrations() []migration.Migration { return app.migrations }
+func (app *App) Migrations() []*migration.Namespaced { return app.migrations }
 
 func (app *App) Container() *container.ServiceContainer { return app.services }
 
-func (app *App) RegisterCommand(cmds ...cmd.Command) {
-	app.cmds = append(app.cmds, cmds...)
+func (app *App) registerCommandForNamespace(namespace string, cmds ...cmd.Command) error {
+	namespacedCmds := make([]*cmd.Namespaced, len(cmds))
+	for i, m := range cmds {
+		namespacedCmds[i] = cmd.NewNamespaced(namespace, m)
+	}
+	app.cmds = append(app.cmds, namespacedCmds...)
+	return nil
+}
+
+func (app *App) RegisterCommand(cmds ...cmd.Command) error {
+	return app.registerCommandForNamespace("owner", cmds...)
 }
 
 func (app *App) Bootstrap() error {
 	for _, p := range app.plugins {
-		if err := p.Register(app); err != nil {
+		registration, err := p.Register(
+			plugin.NewAppForPlugin(
+				p,
+				app.database,
+				app.cache,
+				app.services,
+			),
+		)
+		if err != nil {
+			return err
+		}
+		err = app.registerMigrationForNamespace(p.Name(), registration.Migrations...)
+		if err != nil {
+			return err
+		}
+		err = app.registerCommandForNamespace(p.Name(), registration.Cmds...)
+		if err != nil {
 			return err
 		}
 	}
