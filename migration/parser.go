@@ -6,10 +6,75 @@ import (
 	"strings"
 )
 
-// parseRawMigration splits a migration content on "-- +migrate up"
-// and "-- +migrate down" markers (case-insensitive, must be alone on their
-// own line), then splits each section into individual statements.
-func parseRawMigration(migrationName, content string) (*Migration, error) {
+// ParseRawMigration parses the contents of a migration file into a Migration.
+//
+// A migration must contain two sections:
+//
+//	-- +migrate up
+//
+//	<SQL statements to apply the migration>
+//
+//	-- +migrate down
+//
+//	<SQL statements to revert the migration>
+//
+// The "up" and "down" markers are case-insensitive and must appear alone on
+// their own line. Leading and trailing whitespace around the markers is
+// ignored.
+//
+// Each section is further split into individual SQL statements using
+// semicolons. For SQL that contains semicolons internally, such as PostgreSQL
+// functions, procedures, or triggers, the statements must be wrapped with:
+//
+//	-- +migrate StatementBegin
+//	...
+//	-- +migrate StatementEnd
+//
+// Everything between StatementBegin and StatementEnd is kept as a single
+// statement, regardless of the number of semicolons it contains.
+//
+// For example:
+//
+//	-- +migrate up
+//
+//	CREATE TABLE users (
+//	    id BIGSERIAL PRIMARY KEY,
+//	    name TEXT NOT NULL
+//	);
+//
+//	CREATE INDEX users_name_idx ON users(name);
+//
+//	-- +migrate down
+//
+//	DROP INDEX users_name_idx;
+//	DROP TABLE users;
+//
+// A function containing internal semicolons should instead be written as:
+//
+//	-- +migrate up
+//
+//	-- +migrate StatementBegin
+//	CREATE FUNCTION update_timestamp()
+//	RETURNS TRIGGER AS $$
+//	BEGIN
+//	    NEW.updated_at = NOW();
+//	    RETURN NEW;
+//	END;
+//	$$ LANGUAGE plpgsql;
+//	-- +migrate StatementEnd
+//
+//	-- +migrate down
+//
+//	-- +migrate StatementBegin
+//	DROP FUNCTION update_timestamp();
+//	-- +migrate StatementEnd
+//
+// Returns a Migration containing the migration name and the parsed "up" and
+// "down" SQL statements.
+//
+// Returns an error when the migration does not contain a valid "up" or "down"
+// section, or when the migration content cannot be parsed.
+func ParseRawMigration(migrationName, content string) (*Migration, error) {
 	up, down, err := splitUpDown(content)
 	if err != nil {
 		return nil, fmt.Errorf("parse migration: %w", err)

@@ -13,12 +13,14 @@ import (
 	"github.com/go-hypercube/go-hypercube/plugin"
 )
 
+const frameworkDevNamespace = "owner"
+
 type App struct {
 	config     config.Config
 	database   *sql.DB
 	cache      cache.Cache
 	plugins    []plugin.Plugin
-	migrations []*migration.Namespaced
+	migrations migration.NamespacedSlice
 	cmds       []*cmd.Namespaced
 	services   *container.ServiceContainer
 }
@@ -44,6 +46,9 @@ func (app *App) UsePlugin(plugins ...plugin.Plugin) error {
 
 	for _, newPlugin := range plugins {
 		name := newPlugin.Name()
+		if name == frameworkDevNamespace {
+			return fmt.Errorf("cannot use %q as plugin name: reserved for framework internal use", name)
+		}
 		if _, exists := seen[name]; exists {
 			return fmt.Errorf("duplicate plugin name %q: a plugin with this name is already registered or appears more than once in this call", name)
 		}
@@ -66,7 +71,7 @@ func (app *App) registerMigrationForNamespace(namespace string, migrations ...*m
 }
 
 func (app *App) RegisterMigration(migrations ...*migration.Migration) error {
-	return app.registerMigrationForNamespace("owner", migrations...)
+	return app.registerMigrationForNamespace(frameworkDevNamespace, migrations...)
 }
 
 func (app *App) RegisterRawMigration(name, rawMigrationString string) error {
@@ -99,7 +104,7 @@ func (app *App) registerCommandForNamespace(namespace string, cmds ...cmd.Comman
 }
 
 func (app *App) RegisterCommand(cmds ...cmd.Command) error {
-	return app.registerCommandForNamespace("owner", cmds...)
+	return app.registerCommandForNamespace(frameworkDevNamespace, cmds...)
 }
 
 func (app *App) Bootstrap() error {
