@@ -3,6 +3,7 @@ package hypercube
 import (
 	"database/sql"
 	"embed"
+	"fmt"
 
 	"github.com/go-hypercube/go-hypercube/cache"
 	"github.com/go-hypercube/go-hypercube/cmd"
@@ -35,9 +36,24 @@ func (app *App) Config() config.Config { return app.config }
 func (app *App) DB() *sql.DB           { return app.database }
 func (app *App) Cache() cache.Cache    { return app.cache }
 
-func (app *App) UsePlugin(plugins ...plugin.Plugin) {
+func (app *App) UsePlugin(plugins ...plugin.Plugin) error {
+	seen := make(map[string]struct{}, len(app.plugins)+len(plugins))
+	for _, p := range app.plugins {
+		seen[p.Name()] = struct{}{}
+	}
+
+	for _, newPlugin := range plugins {
+		name := newPlugin.Name()
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("duplicate plugin name %q: a plugin with this name is already registered or appears more than once in this call", name)
+		}
+		seen[name] = struct{}{}
+	}
+
 	app.plugins = append(app.plugins, plugins...)
+	return nil
 }
+
 func (app *App) Plugins() []plugin.Plugin { return app.plugins }
 
 func (app *App) registerMigrationForNamespace(namespace string, migrations ...*migration.Migration) error {
