@@ -1,0 +1,42 @@
+name: Run Go Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "./go.mod"
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Check tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run tests with race
+        run: go test -race ./...
+
+      - name: Vet code
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
