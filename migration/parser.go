@@ -77,7 +77,7 @@ import (
 func ParseRawMigration(migrationName, content string) (*Migration, error) {
 	up, down, err := splitUpDown(content)
 	if err != nil {
-		return nil, fmt.Errorf("parse migration: %w", err)
+		return nil, fmt.Errorf("parse migration: %w in %q", err, migrationName)
 	}
 	return &Migration{
 		Name: migrationName,

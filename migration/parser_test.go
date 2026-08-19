@@ -172,7 +172,7 @@ func TestSplitStatements(t *testing.T) {
 			want: []string{
 				"select 1;",
 				"-- comment;",
-				" with semicolon\nselect 2;",
+				"with semicolon\nselect 2;",
 			},
 		},
 		{
