@@ -11,7 +11,6 @@ type Migration struct {
 	Down []string
 }
 
-
 type Namespaced struct {
 	Namespace string
 	*Migration
@@ -23,7 +22,6 @@ func NewNamespaced(namespace string, migration *Migration) *Namespaced {
 		Migration: migration,
 	}
 }
-
 
 // NamespacedSlice is a slice of namespaced migrations.
 // It provides convenient methods for grouping, sorting, and querying
@@ -61,7 +59,6 @@ func (s NamespacedSlice) GroupByNamespace() map[string][]*Migration {
 	return groups
 }
 
-
 // Sort sorts the NamespacedSlice in place by (Namespace, Migration.Name)
 // in ascending order.
 func (s NamespacedSlice) Sort() {
@@ -69,7 +66,7 @@ func (s NamespacedSlice) Sort() {
 		if nsCmp := strings.Compare(a.Namespace, b.Namespace); nsCmp != 0 {
 			return nsCmp
 		}
-		return strings.Compare(a.Migration.Name, b.Migration.Name)
+		return strings.Compare(a.Name, b.Name)
 	})
 }
 
@@ -87,18 +84,16 @@ func (s NamespacedSlice) Namespaces() []string {
 	return result
 }
 
-
 // Contains reports whether a migration with the given name exists
 // under the specified namespace.
 func (s NamespacedSlice) Contains(namespace, name string) bool {
 	for _, ns := range s {
-		if ns.Namespace == namespace && ns.Migration.Name == name {
+		if ns.Namespace == namespace && ns.Name == name {
 			return true
 		}
 	}
 	return false
 }
-
 
 // GetNamespaces returns all Namespaced entries whose namespace is in the
 // provided list. The result is sorted by (Namespace, Migration.Name).
@@ -122,7 +117,7 @@ func (s NamespacedSlice) GetNamespaces(namespaces ...string) []*Namespaced {
 		if nsCmp := strings.Compare(a.Namespace, b.Namespace); nsCmp != 0 {
 			return nsCmp
 		}
-		return strings.Compare(a.Migration.Name, b.Migration.Name)
+		return strings.Compare(a.Name, b.Name)
 	})
 	return result
 }

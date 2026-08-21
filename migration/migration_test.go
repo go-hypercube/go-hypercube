@@ -107,20 +107,20 @@ func TestNamespacedSlice_GetNamespaces(t *testing.T) {
 		require.Len(t, got, 3)
 		// Should be sorted: first auth (a, b), then billing (x)
 		assert.Equal(t, "auth", got[0].Namespace)
-		assert.Equal(t, "a", got[0].Migration.Name)
+		assert.Equal(t, "a", got[0].Name)
 		assert.Equal(t, "auth", got[1].Namespace)
-		assert.Equal(t, "b", got[1].Migration.Name)
+		assert.Equal(t, "b", got[1].Name)
 		assert.Equal(t, "billing", got[2].Namespace)
-		assert.Equal(t, "x", got[2].Migration.Name)
+		assert.Equal(t, "x", got[2].Name)
 	})
 
 	t.Run("single namespace", func(t *testing.T) {
 		got := slice.GetNamespaces("auth")
 		require.Len(t, got, 2)
 		assert.Equal(t, "auth", got[0].Namespace)
-		assert.Equal(t, "a", got[0].Migration.Name)
+		assert.Equal(t, "a", got[0].Name)
 		assert.Equal(t, "auth", got[1].Namespace)
-		assert.Equal(t, "b", got[1].Migration.Name)
+		assert.Equal(t, "b", got[1].Name)
 	})
 
 	t.Run("no arguments", func(t *testing.T) {
