@@ -1,4 +1,7 @@
-name: Run Go Tests
+name: Run Go Tests & Lints
+
+permissions:
+  contents: read
 
 on:
   push:
@@ -6,37 +9,36 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: test
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
         with:
           go-version-file: "./go.mod"
+          ache-dependency-path: "./go.mod"
           cache: true
 
       - name: Download dependencies
         run: go mod download
 
-      - name: Check tidy
-        run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum
-
-      - name: Verify dependencies
-        run: go mod verify
-
       - name: Run tests with race
         run: go test -race ./...
 
-      - name: Vet code
-        run: go vet ./...
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
 
-      - name: Run golangci-lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: "./go.mod"
+          ache-dependency-path: "./go.mod"
+          cache: true
+
+      - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest

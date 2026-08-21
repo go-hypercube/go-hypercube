@@ -1,15 +1,13 @@
 # Test the codebase
 test:
 	@echo "Testing..."
-	@go test ./... -v
+	@go test ./...
 
-# Check go code using go vet & staticcheck
-chk:
-	@echo "Runing go vet & staticcheck..."
-	@go vet ./...
-	@staticcheck ./...
+lint:
+	@echo "Running golangci-lint"
+	@golangci-lint run ./...
 
-# Format the codebase using gofumpt
+# Format the codebase using golangci-lint fmt
 fmt:
-	@echo "Formating..."
-	@gofumpt -w .
+	@echo "Formatting using golangci-lint"
+	@golangci-lint fmt ./...
