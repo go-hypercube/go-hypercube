@@ -79,7 +79,7 @@ func Bind[T any](c *ServiceContainer, instance T, name ...string) {
 func Resolve[T any](c *ServiceContainer, name ...string) T {
 	value, found := c.resolve(typeOf[T](), optionalName(name))
 	if !found {
-		panic(fmt.Sprintf("container: %s (name=%q) not bound", typeOf[T](), optionalName(name)))
+		panic(fmt.Errorf("container: %s (name=%q) not bound", typeOf[T](), optionalName(name)))
 	}
 	return value.(T)
 }
