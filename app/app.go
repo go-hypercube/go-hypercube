@@ -3,13 +3,11 @@ package app
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/go-hypercube/go-hypercube/cache"
 	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/config"
 	"github.com/go-hypercube/go-hypercube/internal/container"
-	"github.com/go-hypercube/go-hypercube/internal/structure"
 	"github.com/go-hypercube/go-hypercube/migration"
 	"github.com/go-hypercube/go-hypercube/plugin"
 )
@@ -22,6 +20,8 @@ type App struct {
 	migrations migration.NamespacedSlice
 	cmds       cmd.NamespacedSlice
 	services   *container.ServiceContainer
+	didSetup   bool
+	didBoot    bool
 }
 
 func New(config config.Config, database *sql.DB, cache cache.Cache) *App {
@@ -38,6 +38,15 @@ func (app *App) DB() *sql.DB           { return app.database }
 func (app *App) Cache() cache.Cache    { return app.cache }
 
 func (app *App) Setup() error {
+	if app.didSetup {
+		return nil
+	}
+
+	err := app.initPlugins()
+	if err != nil {
+		return err
+	}
+
 	for _, p := range app.plugins {
 		registration, err := p.Register(
 			plugin.NewAppForPlugin(
@@ -59,39 +68,33 @@ func (app *App) Setup() error {
 			return err
 		}
 	}
+
+	app.didSetup = true
 	return nil
 }
 
 func (app *App) Boot() error {
-	pluginGraph := structure.NewGraph[string]()
+	if !app.didSetup {
+		return fmt.Errorf("cannot boot the framework before setting it up; did you forget to call Setup()")
+	}
+	if app.didBoot {
+		return nil
+	}
+
 	for _, p := range app.plugins {
-		pluginGraph.AddVertex(p.Name())
-		for _, dep := range p.Dependencies() {
-			pluginGraph.AddEdge(p.Name(), dep)
+		err := p.Boot(
+			plugin.NewAppForPlugin(
+				p,
+				app.database,
+				app.cache,
+				app.services,
+			),
+		)
+		if err != nil {
+			return err
 		}
 	}
-	// check for missing plugins
-	if err := validate(pluginGraph); err != nil {
-		return err
-	}
 
-	return nil
-}
-
-func validate(g *structure.Graph[string]) error {
-	var missing []string
-	for p, deps := range g.Vertices {
-		for _, dep := range deps {
-			if _, exists := g.Vertices[dep]; !exists {
-				missing = append(missing, fmt.Sprintf(
-					"plugin '%s' depends on '%s', but '%s' was not added to the app",
-					p, dep, dep,
-				))
-			}
-		}
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("missing plugin dependencies:\n%s", strings.Join(missing, "\n"))
-	}
+	app.didBoot = true
 	return nil
 }
