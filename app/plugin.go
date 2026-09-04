@@ -54,12 +54,12 @@ func (app *App) initPlugins() error {
 			strings.Join(cyclePath, " → "),
 		)
 	}
-	app.SortPluginsByIdOrder(topologicalOrder)
+	app.sortPluginsByIdOrder(topologicalOrder)
 
 	return nil
 }
 
-func (app *App) SortPluginsByIdOrder(orderedIds []string) {
+func (app *App) sortPluginsByIdOrder(orderedIds []string) {
 	l := len(app.plugins)
 	pluginLookup := make(map[string]plugin.Plugin, l)
 	for _, p := range app.plugins {
