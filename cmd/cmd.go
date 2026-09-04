@@ -114,6 +114,7 @@ func (s NamespacedSlice) GetCommand(namespace, name string) Command {
 	}
 	return nil
 }
+
 // GetNamespaces returns all Namespaced entries whose namespace is in the
 // provided list. The result is sorted by (Namespace, Migration.Name).
 // If no namespaces are provided, it returns nil.

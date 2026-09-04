@@ -5,12 +5,26 @@ import (
 	"strings"
 )
 
+// Migration is a single, named database migration consisting of a set
+// of "up" SQL statements to apply the change and a set of "down" SQL
+// statements to revert it. Name is expected to be sortable across
+// migrations within the same namespace (e.g. a timestamp or zero-padded
+// sequence prefix — see migration.ExtractFromEmbedFs) so that Up/Down
+// are lexicographically ordered by Name.
+//
+// See ParseRawMigration and ExtractFromEmbedFs for how Up/Down are
+// produced from a raw *.sql migration file.
 type Migration struct {
 	Name string
 	Up   []string
 	Down []string
 }
 
+// Namespaced pairs a *Migration with the namespace it belongs to (a
+// plugin's Name(), or the framework's own reserved namespace). Embedding
+// *Migration lets a *Namespaced be used anywhere a *Migration's fields
+// are expected, while still carrying the namespace for grouping,
+// filtering, and ordering (see NamespacedSlice).
 type Namespaced struct {
 	Namespace string
 	*Migration
