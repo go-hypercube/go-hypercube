@@ -3,4 +3,5 @@ words = [
     "statementend",
     "gofumpt",
     "golangci",
+    "Sqlmock",
 ]
