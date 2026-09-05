@@ -10,6 +10,7 @@ import (
 	"github.com/go-hypercube/go-hypercube/internal/container"
 	"github.com/go-hypercube/go-hypercube/migration"
 	"github.com/go-hypercube/go-hypercube/plugin"
+	"github.com/go-hypercube/go-hypercube/seeder"
 )
 
 type App struct {
@@ -18,6 +19,7 @@ type App struct {
 	cache      cache.Cache
 	plugins    []plugin.Plugin
 	migrations migration.NamespacedSlice
+	seeders    seeder.NamespacedSlice
 	cmds       cmd.NamespacedSlice
 	services   *container.ServiceContainer
 	didSetup   bool
@@ -64,6 +66,10 @@ func (app *App) Setup() error {
 			return err
 		}
 		err = app.registerCommandForNamespace(p.Name(), registration.Cmds...)
+		if err != nil {
+			return err
+		}
+		err = app.registerSeederForNamespace(p.Name(), registration.Seeders...)
 		if err != nil {
 			return err
 		}

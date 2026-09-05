@@ -11,21 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newMockApp returns an *App wired to a sqlmock database, plus the mock
-// controller for setting expectations. driverName may be "" to exercise
-// the dialectUnknown ("?") path, or "postgres"/"mysql"/"sqlite".
-func newMockApp(t *testing.T, driverName string) (*App, sqlmock.Sqlmock) {
-	t.Helper()
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
 
-	app := &App{
-		config:   newFakeConfig(map[string]string{"DB_DRIVER": driverName}),
-		database: db,
-	}
-	return app, mock
-}
 
 // ---- registration ----
 
@@ -40,9 +26,9 @@ func TestRegisterMigration(t *testing.T) {
 
 	got := app.Migrations()
 	require.Len(t, got, 2)
-	assert.Equal(t, frameworkDevNamespace, got[0].Namespace)
+	assert.Equal(t, hostAppNamespace, got[0].Namespace)
 	assert.Equal(t, "0001_a", got[0].Name)
-	assert.Equal(t, frameworkDevNamespace, got[1].Namespace)
+	assert.Equal(t, hostAppNamespace, got[1].Namespace)
 	assert.Equal(t, "0002_b", got[1].Name)
 }
 
@@ -520,20 +506,7 @@ func TestMigrateNamespaceUpToLatest(t *testing.T) {
 
 // ---- MigrateAllUp ----
 
-// fakePlugin is a minimal plugin.Plugin for exercising plugin-first
-// ordering in MigrateAllUp. Register/Boot are not exercised here since
-// MigrateAllUp only reads app.plugins (assumed already populated and
-// dependency-ordered by Setup/initPlugins).
-type fakePlugin struct {
-	name string
-}
 
-func (p *fakePlugin) Name() string           { return p.name }
-func (p *fakePlugin) Dependencies() []string { return nil }
-func (p *fakePlugin) Register(_ *plugin.App) (*plugin.Registration, error) {
-	return &plugin.Registration{}, nil
-}
-func (p *fakePlugin) Boot(_ *plugin.App) error { return nil }
 
 func TestMigrateAllUp(t *testing.T) {
 	t.Run("errors if Setup has not been called", func(t *testing.T) {
@@ -555,7 +528,7 @@ func TestMigrateAllUp(t *testing.T) {
 			&migration.Migration{Name: "0001", Up: []string{"create table pb"}}))
 		require.NoError(t, app.registerMigrationForNamespace("pluginA",
 			&migration.Migration{Name: "0001", Up: []string{"create table pa"}}))
-		require.NoError(t, app.registerMigrationForNamespace(frameworkDevNamespace,
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
 			&migration.Migration{Name: "0001", Up: []string{"create table dev"}}))
 
 		// pluginB migrated first
@@ -584,12 +557,12 @@ func TestMigrateAllUp(t *testing.T) {
 		// currently-registered plugin
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectQuery(`SELECT EXISTS`).WithArgs(frameworkDevNamespace, "0001").
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs(hostAppNamespace, "0001").
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 		mock.ExpectBegin()
 		mock.ExpectExec(`create table dev`).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectCommit()
-		mock.ExpectExec(`INSERT INTO hypercube_migrations`).WithArgs(frameworkDevNamespace, "0001").
+		mock.ExpectExec(`INSERT INTO hypercube_migrations`).WithArgs(hostAppNamespace, "0001").
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		err := app.MigrateAllUp()
@@ -604,7 +577,7 @@ func TestMigrateAllUp(t *testing.T) {
 
 		require.NoError(t, app.registerMigrationForNamespace("pluginA",
 			&migration.Migration{Name: "0001", Up: []string{"bad sql"}}))
-		require.NoError(t, app.registerMigrationForNamespace(frameworkDevNamespace,
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
 			&migration.Migration{Name: "0001", Up: []string{"create table dev"}}))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -634,13 +607,13 @@ func TestOrderedMigrationNamespaces(t *testing.T) {
 
 		require.NoError(t, app.registerMigrationForNamespace("pluginB", &migration.Migration{Name: "0001"}))
 		require.NoError(t, app.registerMigrationForNamespace("pluginA", &migration.Migration{Name: "0001"}))
-		require.NoError(t, app.registerMigrationForNamespace(frameworkDevNamespace, &migration.Migration{Name: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace, &migration.Migration{Name: "0001"}))
 		require.NoError(t, app.registerMigrationForNamespace("zzz-no-plugin", &migration.Migration{Name: "0001"}))
 
 		got := app.orderedMigrationNamespaces()
 		// pluginB, pluginA (plugin order preserved) then sorted remainder:
 		// frameworkDevNamespace = "owner", "zzz-no-plugin"
-		assert.Equal(t, []string{"pluginB", "pluginA", frameworkDevNamespace, "zzz-no-plugin"}, got)
+		assert.Equal(t, []string{"pluginB", "pluginA", hostAppNamespace, "zzz-no-plugin"}, got)
 	})
 
 	t.Run("plugin with no registered migrations is skipped", func(t *testing.T) {
@@ -648,10 +621,10 @@ func TestOrderedMigrationNamespaces(t *testing.T) {
 		app.plugins = []plugin.Plugin{
 			&fakePlugin{name: "pluginA"}, // has no migrations registered
 		}
-		require.NoError(t, app.registerMigrationForNamespace(frameworkDevNamespace, &migration.Migration{Name: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace, &migration.Migration{Name: "0001"}))
 
 		got := app.orderedMigrationNamespaces()
-		assert.Equal(t, []string{frameworkDevNamespace}, got)
+		assert.Equal(t, []string{hostAppNamespace}, got)
 	})
 
 	t.Run("no plugins, only sorted remainder", func(t *testing.T) {
@@ -889,7 +862,7 @@ func TestMigrationState(t *testing.T) {
 			&migration.Migration{Name: "0001"},
 			&migration.Migration{Name: "0002"},
 		))
-		require.NoError(t, app.registerMigrationForNamespace(frameworkDevNamespace,
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
 			&migration.Migration{Name: "0001"},
 		))
 
@@ -906,7 +879,7 @@ func TestMigrationState(t *testing.T) {
 
 		// frameworkDevNamespace queried second
 		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
-			WithArgs(frameworkDevNamespace).
+			WithArgs(hostAppNamespace).
 			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}))
 
 		got, err := app.MigrationState()
@@ -917,7 +890,7 @@ func TestMigrationState(t *testing.T) {
 		assert.Equal(t, "0001", got[0].Current)
 		assert.Equal(t, 1, got[0].Pending)
 
-		assert.Equal(t, frameworkDevNamespace, got[1].Namespace)
+		assert.Equal(t, hostAppNamespace, got[1].Namespace)
 		assert.Equal(t, "", got[1].Current)
 		assert.Equal(t, 1, got[1].Pending)
 

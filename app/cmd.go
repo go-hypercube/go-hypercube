@@ -12,7 +12,7 @@ import (
 // framework-owned commands (e.g. built-in dev/debug commands) rather
 // than ones contributed by a plugin.
 func (app *App) RegisterCommand(cmds ...cmd.Command) error {
-	return app.registerCommandForNamespace(frameworkDevNamespace, cmds...)
+	return app.registerCommandForNamespace(hostAppNamespace, cmds...)
 }
 
 // registerCommandForNamespace wraps each of cmds in a cmd.Namespaced

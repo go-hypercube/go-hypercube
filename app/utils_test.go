@@ -6,20 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// fakeConfig is a minimal config.Config implementation for tests that
-// only need to control DB_DRIVER (or another single key).
-type fakeConfig struct {
-	values map[string]string
-}
-
-func newFakeConfig(kv map[string]string) *fakeConfig {
-	return &fakeConfig{values: kv}
-}
-
-func (c *fakeConfig) ReadString(key string) string { return c.values[key] }
-func (c *fakeConfig) ReadInt(key string) int64     { return 0 }
-func (c *fakeConfig) ReadFloat(key string) float64 { return 0 }
-
 func TestDbDriver_Placeholder(t *testing.T) {
 	tests := []struct {
 		name   string

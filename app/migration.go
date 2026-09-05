@@ -21,7 +21,7 @@ func (app *App) Migrations() migration.NamespacedSlice { return app.migrations }
 // for framework-owned migrations rather than ones contributed by a
 // plugin.
 func (app *App) RegisterMigration(migrations ...*migration.Migration) error {
-	return app.registerMigrationForNamespace(frameworkDevNamespace, migrations...)
+	return app.registerMigrationForNamespace(hostAppNamespace, migrations...)
 }
 
 // RegisterMigrationFromFs reads every *.sql migration file at the root
