@@ -61,6 +61,9 @@ linters:
     - usetesting
 
   settings:
+    errcheck:
+      exclude-functions:
+        - (*database/sql.Rows).Close
     misspell:
       locale: US
       # List of words to ignore
