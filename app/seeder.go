@@ -19,13 +19,32 @@ func (app *App) RegisterSeeder(seeders ...seeder.Seeder) error {
 }
 
 // registerSeederForNamespace wraps each of seeders in a
-// seeder.Namespaced under namespace and appends them to app.seeders.
+// seeder.Namespaced under namespace and adds them to app.seeders.
+//
+// If a seeder with the same (namespace, Name()) is already registered,
+// the existing entry is replaced in place rather than appended
+// alongside it — the new registration wins, and app.seeders never ends
+// up holding two entries for the same (namespace, name) pair. This
+// matters both for correctness of GetSeeder/GetNamespace lookups (which
+// would otherwise silently return whichever entry happens to come
+// first) and so RunSeedersForNamespace/SeedAll don't run the same
+// logical seeder twice under one name.
 func (app *App) registerSeederForNamespace(namespace string, seeders ...seeder.Seeder) error {
-	namespacedSeeders := make([]*seeder.Namespaced, len(seeders))
-	for i, s := range seeders {
-		namespacedSeeders[i] = seeder.NewNamespaced(namespace, s)
+	for _, s := range seeders {
+		namespaced := seeder.NewNamespaced(namespace, s)
+
+		replaced := false
+		for i, existing := range app.seeders {
+			if existing.Namespace == namespace && existing.Name() == s.Name() {
+				app.seeders[i] = namespaced
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			app.seeders = append(app.seeders, namespaced)
+		}
 	}
-	app.seeders = append(app.seeders, namespacedSeeders...)
 	return nil
 }
 

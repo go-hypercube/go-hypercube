@@ -52,14 +52,19 @@ func (app *App) initPlugins() error {
 		return err
 	}
 
-	topologicalOrder, cyclePath := pluginGraph.GetTopologicalOrCycle()
+	// Edges are built as p.Name() -> dep.ID ("plugin depends on dep"),
+	// so GetTopologicalOrCycle's plain order would put dependents
+	// before their dependencies. GetReverseTopologicalOrCycle gives the
+	// order plugin initialization actually needs: each plugin's
+	// dependencies fully initialized before the plugin itself.
+	dependencyFirstOrder, cyclePath := pluginGraph.GetReverseTopologicalOrCycle()
 	if cyclePath != nil {
 		return fmt.Errorf(
 			"cannot resolve plugin order: a circular dependency exists among plugins [%s]. each plugin must have acyclic dependencies",
 			strings.Join(cyclePath, " → "),
 		)
 	}
-	app.sortPluginsByIdOrder(topologicalOrder)
+	app.sortPluginsByIdOrder(dependencyFirstOrder)
 
 	return nil
 }
@@ -88,7 +93,7 @@ func (app *App) checkPluginDependencies(g *structure.Graph[string]) error {
 
 	var problems []string
 	for name, deps := range g.Vertices {
-		for _, depID := range deps.Slice() {
+		for _, depID := range deps {
 			depPlugin, exists := byName[depID]
 			if !exists {
 				problems = append(problems, fmt.Sprintf(

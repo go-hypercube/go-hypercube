@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
-
 // ---- registration ----
 
 func TestRegisterMigration(t *testing.T) {
@@ -506,8 +504,6 @@ func TestMigrateNamespaceUpToLatest(t *testing.T) {
 
 // ---- MigrateAllUp ----
 
-
-
 func TestMigrateAllUp(t *testing.T) {
 	t.Run("errors if Setup has not been called", func(t *testing.T) {
 		app := &App{didSetup: false}
@@ -912,5 +908,119 @@ func TestMigrationState(t *testing.T) {
 		assert.Contains(t, err.Error(), `get migration state for namespace "auth"`)
 		assert.ErrorIs(t, err, assert.AnError)
 		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+// ---- registerMigrationForNamespace duplicate rejection ----
+
+func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
+	t.Run("second registration of the same (namespace, name) is rejected", func(t *testing.T) {
+		app := &App{}
+		require.NoError(t, app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_init"}))
+
+		err := app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_init"})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `migration "0001_init" is already registered in namespace "auth"`)
+	})
+
+	t.Run("existing registration is left untouched after a rejected duplicate", func(t *testing.T) {
+		app := &App{}
+		original := &migration.Migration{Name: "0001_init", Up: []string{"create table a"}}
+		require.NoError(t, app.registerMigrationForNamespace("auth", original))
+
+		err := app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_init", Up: []string{"create table b"}})
+		require.Error(t, err)
+
+		got := app.migrations.GetNamespace("auth")
+		require.Len(t, got, 1)
+		assert.Same(t, original, got[0], "the original migration must not be replaced")
+	})
+
+	t.Run("same name in a different namespace does not collide", func(t *testing.T) {
+		app := &App{}
+		require.NoError(t, app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_init"}))
+
+		err := app.registerMigrationForNamespace("billing",
+			&migration.Migration{Name: "0001_init"})
+		require.NoError(t, err)
+
+		assert.Len(t, app.migrations.GetNamespace("auth"), 1)
+		assert.Len(t, app.migrations.GetNamespace("billing"), 1)
+	})
+
+	t.Run("batch registration is atomic: a collision partway through registers none of the batch", func(t *testing.T) {
+		app := &App{}
+		require.NoError(t, app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0002_existing"}))
+
+		err := app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_new"},
+			&migration.Migration{Name: "0002_existing"}, // collides
+			&migration.Migration{Name: "0003_new"},
+		)
+		require.Error(t, err)
+
+		got := app.migrations.GetNamespace("auth")
+		require.Len(t, got, 1, "none of the new batch should be registered when any one of them collides")
+		assert.Equal(t, "0002_existing", got[0].Name)
+	})
+
+	t.Run("collision within the same batch (no prior registration) is also rejected", func(t *testing.T) {
+		app := &App{}
+
+		err := app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_dup"},
+			&migration.Migration{Name: "0001_dup"},
+		)
+		require.Error(t, err)
+	})
+
+	t.Run("collision within the same batch is rejected with a distinct message", func(t *testing.T) {
+		app := &App{}
+
+		err := app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_dup"},
+			&migration.Migration{Name: "0001_dup"},
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `migration "0001_dup" appears more than once in this registration call for namespace "auth"`)
+	})
+
+	t.Run("in-batch collision registers none of the batch", func(t *testing.T) {
+		app := &App{}
+
+		err := app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_first"},
+			&migration.Migration{Name: "0002_dup"},
+			&migration.Migration{Name: "0002_dup"},
+		)
+		require.Error(t, err)
+		assert.Empty(t, app.migrations.GetNamespace("auth"), "no migration from the batch should be registered, including the ones before the collision")
+	})
+
+	t.Run("in-batch collision is detected even when the duplicate appears before the first occurrence in iteration order doesn't matter", func(t *testing.T) {
+		app := &App{}
+
+		err := app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001_a"},
+			&migration.Migration{Name: "0001_a"},
+			&migration.Migration{Name: "0002_b"},
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `"0001_a" appears more than once`)
+	})
+
+	t.Run("RegisterMigration surfaces the same rejection", func(t *testing.T) {
+		app := &App{}
+		require.NoError(t, app.RegisterMigration(&migration.Migration{Name: "0001"}))
+
+		err := app.RegisterMigration(&migration.Migration{Name: "0001"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "already registered")
 	})
 }

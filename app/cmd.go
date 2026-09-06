@@ -16,16 +16,31 @@ func (app *App) RegisterCommand(cmds ...cmd.Command) error {
 }
 
 // registerCommandForNamespace wraps each of cmds in a cmd.Namespaced
-// under namespace and appends them to app.cmds. It never returns a
-// non-nil error today, but keeps an error return so registration can
-// gain validation (e.g. duplicate-name checks) later without changing
-// the call sites in app/plugin.go and RegisterCommand.
+// under namespace and adds them to app.cmds.
+//
+// If a command with the same (namespace, Name()) is already registered,
+// the existing entry is replaced in place rather than appended
+// alongside it — the new registration wins. This mirrors
+// registerSeederForNamespace: a command is a live piece of behavior, so
+// re-registering the same name is treated as an intentional
+// replacement (e.g. a plugin overriding a default command), not an
+// error.
 func (app *App) registerCommandForNamespace(namespace string, cmds ...cmd.Command) error {
-	namespacedCmds := make([]*cmd.Namespaced, len(cmds))
-	for i, m := range cmds {
-		namespacedCmds[i] = cmd.NewNamespaced(namespace, m)
+	for _, c := range cmds {
+		namespaced := cmd.NewNamespaced(namespace, c)
+
+		replaced := false
+		for i, existing := range app.cmds {
+			if existing.Namespace == namespace && existing.Name() == c.Name() {
+				app.cmds[i] = namespaced
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			app.cmds = append(app.cmds, namespaced)
+		}
 	}
-	app.cmds = append(app.cmds, namespacedCmds...)
 	return nil
 }
 

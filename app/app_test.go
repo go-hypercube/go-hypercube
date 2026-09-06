@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/plugin"
 	"github.com/stretchr/testify/require"
 )
@@ -54,3 +55,11 @@ func newFakeConfig(kv map[string]string) *fakeConfig {
 func (c *fakeConfig) ReadString(key string) string { return c.values[key] }
 func (c *fakeConfig) ReadInt(key string) int64     { return 0 }
 func (c *fakeConfig) ReadFloat(key string) float64 { return 0 }
+
+// fakeCommand is a minimal cmd.Command for testing registration.
+type fakeCommand struct {
+	name string
+}
+
+func (c *fakeCommand) Name() string                { return c.name }
+func (c *fakeCommand) Run(_ *cmd.App) (any, error) { return nil, nil }

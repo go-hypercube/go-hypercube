@@ -55,14 +55,8 @@ func TestGetTopologicalOrCycle_SimpleCycle(t *testing.T) {
 	// Use require here: if cycle is nil, the slice evaluation below fails horribly
 	require.NotNil(t, cycle, "Cycle path should be detected")
 
-	// Map iterations in Go are randomized. The cycle loop can legally
-	// start at any node depending on which node DFS hits first.
-	expectedCycles := [][]string{
-		{"A", "B", "C", "A"},
-		{"B", "C", "A", "B"},
-		{"C", "A", "B", "C"},
-	}
-	assert.Contains(t, expectedCycles, cycle, "Should output a valid, closed cycle loop path")
+	expectedCycles := []string{"A", "B", "C", "A"}
+	assert.Equal(t, expectedCycles, cycle, "Should output a valid, closed cycle loop path")
 }
 
 func TestGetTopologicalOrCycle_DeepCycle(t *testing.T) {
@@ -106,11 +100,8 @@ func TestGetTopologicalOrCycle_DisconnectedGraphWithCycle(t *testing.T) {
 	assert.Nil(t, order, "Global graph topological order fails if any single component has a cycle")
 	require.NotNil(t, cycle)
 
-	expectedCycles := [][]string{
-		{"M", "N", "M"},
-		{"N", "M", "N"},
-	}
-	assert.Contains(t, expectedCycles, cycle)
+	expectedCycles := []string{"M", "N", "M"}
+	assert.Equal(t, expectedCycles, cycle)
 }
 
 func TestGetTopologicalOrCycle_EmptyAndSingleNode(t *testing.T) {
@@ -128,6 +119,93 @@ func TestGetTopologicalOrCycle_EmptyAndSingleNode(t *testing.T) {
 	require.NotNil(t, order)
 	assert.Equal(t, []int{42}, order)
 	assert.Nil(t, cycle)
+}
+
+func TestGetReverseTopologicalOrCycle_ValidDAG(t *testing.T) {
+	// A -> B -> C -> D
+	//      \---> D
+	g := NewGraph[string]()
+	g.AddVertex("A")
+	g.AddVertex("B")
+	g.AddVertex("C")
+	g.AddVertex("D")
+
+	g.AddEdge("A", "B")
+	g.AddEdge("B", "C")
+	g.AddEdge("B", "D")
+	g.AddEdge("C", "D")
+
+	forward, _ := g.GetTopologicalOrCycle()
+	reverse, cycle := g.GetReverseTopologicalOrCycle()
+
+	assert.Nil(t, cycle)
+	require.NotNil(t, reverse)
+	require.Len(t, reverse, 4)
+
+	// reverse must be the exact reversal of forward
+	require.Len(t, forward, 4)
+	for i := range forward {
+		assert.Equal(t, forward[len(forward)-1-i], reverse[i])
+	}
+
+	// and it must satisfy "v before u" for every edge u -> v
+	assert.Less(t, indexOf(reverse, "B"), indexOf(reverse, "A"), "B must come before A in reverse order")
+	assert.Less(t, indexOf(reverse, "C"), indexOf(reverse, "B"), "C must come before B in reverse order")
+	assert.Less(t, indexOf(reverse, "D"), indexOf(reverse, "B"), "D must come before B in reverse order")
+	assert.Less(t, indexOf(reverse, "D"), indexOf(reverse, "C"), "D must come before C in reverse order")
+}
+
+func TestGetReverseTopologicalOrCycle_EmptyAndSingleNode(t *testing.T) {
+	gEmpty := NewGraph[int]()
+	order, cycle := gEmpty.GetReverseTopologicalOrCycle()
+	assert.Empty(t, order)
+	assert.Nil(t, cycle)
+
+	gSingle := NewGraph[int]()
+	gSingle.AddVertex(42)
+	order, cycle = gSingle.GetReverseTopologicalOrCycle()
+	require.NotNil(t, order)
+	assert.Equal(t, []int{42}, order)
+	assert.Nil(t, cycle)
+}
+
+func TestAddEdge_Deduplicates(t *testing.T) {
+	t.Run("adding the same edge twice does not duplicate it", func(t *testing.T) {
+		g := NewGraph[string]()
+		g.AddVertex("A")
+		g.AddVertex("B")
+
+		g.AddEdge("A", "B")
+		g.AddEdge("A", "B") // duplicate
+
+		assert.Equal(t, []string{"B"}, g.Vertices["A"])
+	})
+
+	t.Run("adding different edges from the same vertex both persist", func(t *testing.T) {
+		g := NewGraph[string]()
+		g.AddVertex("A")
+		g.AddVertex("B")
+		g.AddVertex("C")
+
+		g.AddEdge("A", "B")
+		g.AddEdge("A", "C")
+		g.AddEdge("A", "B") // duplicate of the first
+
+		assert.Equal(t, []string{"B", "C"}, g.Vertices["A"])
+	})
+
+	t.Run("duplicate edges do not affect topological order or cycle detection", func(t *testing.T) {
+		g := NewGraph[string]()
+		g.AddVertex("A")
+		g.AddVertex("B")
+		g.AddEdge("A", "B")
+		g.AddEdge("A", "B")
+		g.AddEdge("A", "B")
+
+		order, cycle := g.GetTopologicalOrCycle()
+		assert.Nil(t, cycle)
+		assert.Equal(t, []string{"A", "B"}, order)
+	})
 }
 
 // Helper function to find index of a slice element

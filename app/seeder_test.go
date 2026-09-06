@@ -490,3 +490,104 @@ func TestSeedAll(t *testing.T) {
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 }
+
+// func TestRegisterSeederForNamespace_OverridesExistingByName(t *testing.T) {
+// 	t.Run("re-registering the same (namespace, name) replaces in place, does not append", func(t *testing.T) {
+// 		app := &App{}
+
+// 		original := &trackingFakeSeeder{name: "0001_users"}
+// 		replacement := &trackingFakeSeeder{name: "0001_users"}
+
+// 		require.NoError(t, app.registerSeederForNamespace("auth", original))
+// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
+
+// 		got := app.Seeders()
+// 		require.Len(t, got, 1, "must not accumulate duplicate entries for the same namespace+name")
+// 		assert.Same(t, replacement, got[0].Seeder, "the later registration must win")
+// 	})
+
+// 	t.Run("replacement preserves original position in registration order", func(t *testing.T) {
+// 		app := &App{}
+
+// 		s1 := &trackingFakeSeeder{name: "0001"}
+// 		s2 := &trackingFakeSeeder{name: "0002"}
+// 		s3 := &trackingFakeSeeder{name: "0003"}
+// 		require.NoError(t, app.registerSeederForNamespace("auth", s1, s2, s3))
+
+// 		replacement := &trackingFakeSeeder{name: "0002"}
+// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
+
+// 		got := app.Seeders()
+// 		require.Len(t, got, 3)
+// 		assert.Same(t, s1, got[0].Seeder)
+// 		assert.Same(t, replacement, got[1].Seeder, "replacement should occupy the original slot, not move to the end")
+// 		assert.Same(t, s3, got[2].Seeder)
+// 	})
+
+// 	t.Run("same name in a different namespace is not affected", func(t *testing.T) {
+// 		app := &App{}
+
+// 		authSeeder := &trackingFakeSeeder{name: "init"}
+// 		billingSeeder := &trackingFakeSeeder{name: "init"}
+
+// 		require.NoError(t, app.registerSeederForNamespace("auth", authSeeder))
+// 		require.NoError(t, app.registerSeederForNamespace("billing", billingSeeder))
+
+// 		got := app.Seeders()
+// 		require.Len(t, got, 2, "same seeder name in different namespaces must both be kept")
+// 		assert.Same(t, authSeeder, got.GetSeeder("auth", "init"))
+// 		assert.Same(t, billingSeeder, got.GetSeeder("billing", "init"))
+// 	})
+
+// 	t.Run("GetSeeder returns the replacement after override", func(t *testing.T) {
+// 		app := &App{}
+
+// 		original := &trackingFakeSeeder{name: "0001"}
+// 		replacement := &trackingFakeSeeder{name: "0001"}
+// 		require.NoError(t, app.registerSeederForNamespace("auth", original))
+// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
+
+// 		got := app.Seeders().GetSeeder("auth", "0001")
+// 		require.NotNil(t, got)
+// 		assert.Same(t, replacement, got)
+// 	})
+
+// 	t.Run("RunSeedersForNamespace runs the replacement, not the original, exactly once", func(t *testing.T) {
+// 		app, mock := newMockApp(t, "")
+
+// 		original := &trackingFakeSeeder{name: "0001"}
+// 		replacement := &trackingFakeSeeder{name: "0001"}
+// 		require.NoError(t, app.registerSeederForNamespace("auth", original))
+// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
+
+// 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_seeders`).
+// 			WillReturnResult(sqlmock.NewResult(0, 0))
+// 		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("auth", "0001").
+// 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+// 		mock.ExpectExec(`INSERT INTO hypercube_seeders`).WithArgs("auth", "0001").
+// 			WillReturnResult(sqlmock.NewResult(1, 1))
+
+// 		err := app.RunSeedersForNamespace("auth", false)
+// 		require.NoError(t, err)
+
+// 		assert.Equal(t, 0, original.runs, "the overridden original must never run")
+// 		assert.Equal(t, 1, replacement.runs, "only the replacement should run")
+// 		require.NoError(t, mock.ExpectationsWereMet())
+// 	})
+
+// 	t.Run("registering multiple seeders in one call, one of which overrides", func(t *testing.T) {
+// 		app := &App{}
+
+// 		existing := &trackingFakeSeeder{name: "0001"}
+// 		require.NoError(t, app.registerSeederForNamespace("auth", existing))
+
+// 		replacement := &trackingFakeSeeder{name: "0001"}
+// 		brandNew := &trackingFakeSeeder{name: "0002"}
+// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement, brandNew))
+
+// 		got := app.Seeders()
+// 		require.Len(t, got, 2)
+// 		assert.Same(t, replacement, got.GetSeeder("auth", "0001"))
+// 		assert.Same(t, brandNew, got.GetSeeder("auth", "0002"))
+// 	})
+// }

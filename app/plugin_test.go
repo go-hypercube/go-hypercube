@@ -279,6 +279,45 @@ func TestInitPlugins(t *testing.T) {
 		assert.Equal(t, "billing", app.plugins[1].Name())
 	})
 
+	t.Run("sorts a multi-level dependency chain correctly", func(t *testing.T) {
+		app := &App{}
+		// billing depends on auth, reporting depends on billing:
+		// reporting -> billing -> auth
+		pAuth := &fakePlugin{name: "auth"}
+		pBilling := &fakePlugin{name: "billing", deps: []plugin.DependencyDesc{{ID: "auth"}}}
+		pReporting := &fakePlugin{name: "reporting", deps: []plugin.DependencyDesc{{ID: "billing"}}}
+
+		// registered in a scrambled order
+		app.plugins = []plugin.Plugin{pReporting, pAuth, pBilling}
+
+		err := app.initPlugins()
+		require.NoError(t, err)
+
+		require.Len(t, app.plugins, 3)
+		assert.Equal(t, "auth", app.plugins[0].Name())
+		assert.Equal(t, "billing", app.plugins[1].Name())
+		assert.Equal(t, "reporting", app.plugins[2].Name())
+	})
+
+	t.Run("independent plugins with no shared dependencies can appear in any relative order, but each dependency still precedes its dependent", func(t *testing.T) {
+		app := &App{}
+		pAuth := &fakePlugin{name: "auth"}
+		pBilling := &fakePlugin{name: "billing", deps: []plugin.DependencyDesc{{ID: "auth"}}}
+		pStandalone := &fakePlugin{name: "standalone"} // no deps at all
+
+		app.plugins = []plugin.Plugin{pBilling, pStandalone, pAuth}
+
+		err := app.initPlugins()
+		require.NoError(t, err)
+
+		require.Len(t, app.plugins, 3)
+		authIdx := indexOfPlugin(app.plugins, "auth")
+		billingIdx := indexOfPlugin(app.plugins, "billing")
+		require.NotEqual(t, -1, authIdx)
+		require.NotEqual(t, -1, billingIdx)
+		assert.Less(t, authIdx, billingIdx, "auth must be initialized before billing regardless of where standalone lands")
+	})
+
 	t.Run("propagates missing-dependency error and does not reorder", func(t *testing.T) {
 		app := &App{}
 		pBilling := &fakePlugin{name: "billing", deps: []plugin.DependencyDesc{
@@ -381,4 +420,15 @@ func TestSortPluginsByIdOrder(t *testing.T) {
 
 		assert.Empty(t, app.plugins)
 	})
+}
+
+// indexOfPlugin returns the index of the plugin named name within
+// plugins, or -1 if not present.
+func indexOfPlugin(plugins []plugin.Plugin, name string) int {
+	for i, p := range plugins {
+		if p.Name() == name {
+			return i
+		}
+	}
+	return -1
 }

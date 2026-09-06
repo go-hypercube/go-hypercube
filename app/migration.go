@@ -42,11 +42,33 @@ func (app *App) RegisterMigrationFromFs(files embed.FS) error {
 
 // registerMigrationForNamespace wraps each of migrations in a
 // migration.Namespaced under namespace and appends them to
-// app.migrations. It never returns a non-nil error today, but keeps an
-// error return so registration can gain validation (e.g. duplicate-name
-// checks) later without changing the call sites in app/plugin.go and
-// RegisterMigration.
+// app.migrations.
+//
+// Unlike registerCommandForNamespace/registerSeederForNamespace,
+// duplicate (namespace, Name()) pairs are rejected rather than
+// silently overridden: migrations are meant to represent an immutable,
+// ordered history of schema changes, so a second migration reusing an
+// already-registered name is far more likely to be a bug (e.g. two
+// plugins independently picking "0001_init", or a plugin update
+// changing what an already-applied migration name means) than an
+// intentional replacement.
+//
+// A name collision is rejected whether it's against a migration
+// already registered in a prior call, or against another migration
+// within this same call — registering none of the given migrations if
+// any collision of either kind is found.
 func (app *App) registerMigrationForNamespace(namespace string, migrations ...*migration.Migration) error {
+	seenInBatch := make(map[string]struct{}, len(migrations))
+	for _, m := range migrations {
+		if app.migrations.Contains(namespace, m.Name) {
+			return fmt.Errorf("migration %q is already registered in namespace %q", m.Name, namespace)
+		}
+		if _, dup := seenInBatch[m.Name]; dup {
+			return fmt.Errorf("migration %q appears more than once in this registration call for namespace %q", m.Name, namespace)
+		}
+		seenInBatch[m.Name] = struct{}{}
+	}
+
 	namespacedMigrations := make([]*migration.Namespaced, len(migrations))
 	for i, m := range migrations {
 		namespacedMigrations[i] = migration.NewNamespaced(namespace, m)
