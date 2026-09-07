@@ -110,7 +110,7 @@ func (s NamespacedSlice) Contains(namespace, name string) bool {
 func (s NamespacedSlice) GetSeeder(namespace, name string) Seeder {
 	for _, ns := range s {
 		if ns.Namespace == namespace && ns.Name() == name {
-			return ns
+			return ns.Seeder
 		}
 	}
 	return nil

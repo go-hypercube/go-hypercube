@@ -2,6 +2,7 @@ package app
 
 import (
 	"testing"
+	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-hypercube/go-hypercube/plugin"
@@ -491,103 +492,405 @@ func TestSeedAll(t *testing.T) {
 	})
 }
 
-// func TestRegisterSeederForNamespace_OverridesExistingByName(t *testing.T) {
-// 	t.Run("re-registering the same (namespace, name) replaces in place, does not append", func(t *testing.T) {
-// 		app := &App{}
+func TestRegisterSeederForNamespace_OverridesExistingByName(t *testing.T) {
+	t.Run("re-registering the same (namespace, name) replaces in place, does not append", func(t *testing.T) {
+		app := &App{}
 
-// 		original := &trackingFakeSeeder{name: "0001_users"}
-// 		replacement := &trackingFakeSeeder{name: "0001_users"}
+		original := &trackingFakeSeeder{name: "0001_users"}
+		replacement := &trackingFakeSeeder{name: "0001_users"}
 
-// 		require.NoError(t, app.registerSeederForNamespace("auth", original))
-// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
+		require.NoError(t, app.registerSeederForNamespace("auth", original))
+		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
 
-// 		got := app.Seeders()
-// 		require.Len(t, got, 1, "must not accumulate duplicate entries for the same namespace+name")
-// 		assert.Same(t, replacement, got[0].Seeder, "the later registration must win")
-// 	})
+		got := app.Seeders()
+		require.Len(t, got, 1, "must not accumulate duplicate entries for the same namespace+name")
+		assert.Same(t, replacement, got[0].Seeder, "the later registration must win")
+	})
 
-// 	t.Run("replacement preserves original position in registration order", func(t *testing.T) {
-// 		app := &App{}
+	t.Run("replacement preserves original position in registration order", func(t *testing.T) {
+		app := &App{}
 
-// 		s1 := &trackingFakeSeeder{name: "0001"}
-// 		s2 := &trackingFakeSeeder{name: "0002"}
-// 		s3 := &trackingFakeSeeder{name: "0003"}
-// 		require.NoError(t, app.registerSeederForNamespace("auth", s1, s2, s3))
+		s1 := &trackingFakeSeeder{name: "0001"}
+		s2 := &trackingFakeSeeder{name: "0002"}
+		s3 := &trackingFakeSeeder{name: "0003"}
+		require.NoError(t, app.registerSeederForNamespace("auth", s1, s2, s3))
 
-// 		replacement := &trackingFakeSeeder{name: "0002"}
-// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
+		replacement := &trackingFakeSeeder{name: "0002"}
+		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
 
-// 		got := app.Seeders()
-// 		require.Len(t, got, 3)
-// 		assert.Same(t, s1, got[0].Seeder)
-// 		assert.Same(t, replacement, got[1].Seeder, "replacement should occupy the original slot, not move to the end")
-// 		assert.Same(t, s3, got[2].Seeder)
-// 	})
+		got := app.Seeders()
+		require.Len(t, got, 3)
+		assert.Same(t, s1, got[0].Seeder)
+		assert.Same(t, replacement, got[1].Seeder, "replacement should occupy the original slot, not move to the end")
+		assert.Same(t, s3, got[2].Seeder)
+	})
 
-// 	t.Run("same name in a different namespace is not affected", func(t *testing.T) {
-// 		app := &App{}
+	t.Run("same name in a different namespace is not affected", func(t *testing.T) {
+		app := &App{}
 
-// 		authSeeder := &trackingFakeSeeder{name: "init"}
-// 		billingSeeder := &trackingFakeSeeder{name: "init"}
+		authSeeder := &trackingFakeSeeder{name: "init"}
+		billingSeeder := &trackingFakeSeeder{name: "init"}
 
-// 		require.NoError(t, app.registerSeederForNamespace("auth", authSeeder))
-// 		require.NoError(t, app.registerSeederForNamespace("billing", billingSeeder))
+		require.NoError(t, app.registerSeederForNamespace("auth", authSeeder))
+		require.NoError(t, app.registerSeederForNamespace("billing", billingSeeder))
 
-// 		got := app.Seeders()
-// 		require.Len(t, got, 2, "same seeder name in different namespaces must both be kept")
-// 		assert.Same(t, authSeeder, got.GetSeeder("auth", "init"))
-// 		assert.Same(t, billingSeeder, got.GetSeeder("billing", "init"))
-// 	})
+		seeders := app.Seeders()
+		require.Equal(t, len(seeders), 2, "same seeder name in different namespaces must both be kept")
+		assert.Same(t, authSeeder, seeders.GetSeeder("auth", "init"))
+		assert.Same(t, billingSeeder, seeders.GetSeeder("billing", "init"))
+	})
 
-// 	t.Run("GetSeeder returns the replacement after override", func(t *testing.T) {
-// 		app := &App{}
+	t.Run("GetSeeder returns the replacement after override", func(t *testing.T) {
+		app := &App{}
 
-// 		original := &trackingFakeSeeder{name: "0001"}
-// 		replacement := &trackingFakeSeeder{name: "0001"}
-// 		require.NoError(t, app.registerSeederForNamespace("auth", original))
-// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
+		original := &trackingFakeSeeder{name: "0001"}
+		replacement := &trackingFakeSeeder{name: "0001"}
+		require.NoError(t, app.registerSeederForNamespace("auth", original))
+		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
 
-// 		got := app.Seeders().GetSeeder("auth", "0001")
-// 		require.NotNil(t, got)
-// 		assert.Same(t, replacement, got)
-// 	})
+		got := app.Seeders().GetSeeder("auth", "0001")
+		require.NotNil(t, got)
+		assert.Same(t, replacement, got)
+	})
 
-// 	t.Run("RunSeedersForNamespace runs the replacement, not the original, exactly once", func(t *testing.T) {
-// 		app, mock := newMockApp(t, "")
+	t.Run("RunSeedersForNamespace runs the replacement, not the original, exactly once", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
 
-// 		original := &trackingFakeSeeder{name: "0001"}
-// 		replacement := &trackingFakeSeeder{name: "0001"}
-// 		require.NoError(t, app.registerSeederForNamespace("auth", original))
-// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
+		original := &trackingFakeSeeder{name: "0001"}
+		replacement := &trackingFakeSeeder{name: "0001"}
+		require.NoError(t, app.registerSeederForNamespace("auth", original))
+		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
 
-// 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_seeders`).
-// 			WillReturnResult(sqlmock.NewResult(0, 0))
-// 		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("auth", "0001").
-// 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
-// 		mock.ExpectExec(`INSERT INTO hypercube_seeders`).WithArgs("auth", "0001").
-// 			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_seeders`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("auth", "0001").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+		mock.ExpectExec(`INSERT INTO hypercube_seeders`).WithArgs("auth", "0001").
+			WillReturnResult(sqlmock.NewResult(1, 1))
 
-// 		err := app.RunSeedersForNamespace("auth", false)
-// 		require.NoError(t, err)
+		err := app.RunSeedersForNamespace("auth", false)
+		require.NoError(t, err)
 
-// 		assert.Equal(t, 0, original.runs, "the overridden original must never run")
-// 		assert.Equal(t, 1, replacement.runs, "only the replacement should run")
-// 		require.NoError(t, mock.ExpectationsWereMet())
-// 	})
+		assert.Equal(t, 0, original.runs, "the overridden original must never run")
+		assert.Equal(t, 1, replacement.runs, "only the replacement should run")
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 
-// 	t.Run("registering multiple seeders in one call, one of which overrides", func(t *testing.T) {
-// 		app := &App{}
+	t.Run("registering multiple seeders in one call, one of which overrides", func(t *testing.T) {
+		app := &App{}
 
-// 		existing := &trackingFakeSeeder{name: "0001"}
-// 		require.NoError(t, app.registerSeederForNamespace("auth", existing))
+		existing := &trackingFakeSeeder{name: "0001"}
+		require.NoError(t, app.registerSeederForNamespace("auth", existing))
 
-// 		replacement := &trackingFakeSeeder{name: "0001"}
-// 		brandNew := &trackingFakeSeeder{name: "0002"}
-// 		require.NoError(t, app.registerSeederForNamespace("auth", replacement, brandNew))
+		replacement := &trackingFakeSeeder{name: "0001"}
+		brandNew := &trackingFakeSeeder{name: "0002"}
+		require.NoError(t, app.registerSeederForNamespace("auth", replacement, brandNew))
 
-// 		got := app.Seeders()
-// 		require.Len(t, got, 2)
-// 		assert.Same(t, replacement, got.GetSeeder("auth", "0001"))
-// 		assert.Same(t, brandNew, got.GetSeeder("auth", "0002"))
-// 	})
-// }
+		got := app.Seeders()
+		require.Len(t, got, 2)
+		assert.Same(t, replacement, got.GetSeeder("auth", "0001"))
+		assert.Same(t, brandNew, got.GetSeeder("auth", "0002"))
+	})
+}
+
+// ---- orderedSeederNamespaces ----
+
+func TestOrderedSeederNamespaces(t *testing.T) {
+	t.Run("plugins first in dependency order, then remaining sorted", func(t *testing.T) {
+		app := &App{}
+		app.plugins = []plugin.Plugin{
+			&fakePlugin{name: "pluginB"},
+			&fakePlugin{name: "pluginA"}, // order must be preserved
+		}
+
+		require.NoError(t, app.registerSeederForNamespace("pluginB", &trackingFakeSeeder{name: "0001"}))
+		require.NoError(t, app.registerSeederForNamespace("pluginA", &trackingFakeSeeder{name: "0001"}))
+		require.NoError(t, app.registerSeederForNamespace(hostAppNamespace, &trackingFakeSeeder{name: "0001"}))
+		require.NoError(t, app.registerSeederForNamespace("zzz-no-plugin", &trackingFakeSeeder{name: "0001"}))
+
+		got := app.orderedSeederNamespaces()
+		assert.Equal(t, []string{"pluginB", "pluginA", hostAppNamespace, "zzz-no-plugin"}, got)
+	})
+
+	t.Run("plugin with no registered seeders is skipped", func(t *testing.T) {
+		app := &App{}
+		app.plugins = []plugin.Plugin{&fakePlugin{name: "pluginA"}}
+		require.NoError(t, app.registerSeederForNamespace(hostAppNamespace, &trackingFakeSeeder{name: "0001"}))
+
+		got := app.orderedSeederNamespaces()
+		assert.Equal(t, []string{hostAppNamespace}, got)
+	})
+
+	t.Run("no plugins, only sorted remainder", func(t *testing.T) {
+		app := &App{}
+		require.NoError(t, app.registerSeederForNamespace("billing", &trackingFakeSeeder{name: "0001"}))
+		require.NoError(t, app.registerSeederForNamespace("auth", &trackingFakeSeeder{name: "0001"}))
+
+		got := app.orderedSeederNamespaces()
+		assert.Equal(t, []string{"auth", "billing"}, got)
+	})
+
+	t.Run("no seeders registered at all", func(t *testing.T) {
+		app := &App{}
+		app.plugins = []plugin.Plugin{&fakePlugin{name: "pluginA"}}
+
+		got := app.orderedSeederNamespaces()
+		assert.Empty(t, got)
+	})
+}
+
+// ---- seederRunTimes ----
+
+func TestSeederRunTimes(t *testing.T) {
+	t.Run("returns name -> run_at map, unknown dialect uses ? placeholder", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+
+		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}).
+				AddRow("0001", t1).
+				AddRow("0002", t2))
+
+		got, err := app.seederRunTimes("auth")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]time.Time{"0001": t1, "0002": t2}, got)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("postgres dialect uses $1 placeholder", func(t *testing.T) {
+		app, mock := newMockApp(t, "postgres")
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \$1`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}))
+
+		got, err := app.seederRunTimes("auth")
+		require.NoError(t, err)
+		assert.Empty(t, got)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("empty result set", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}))
+
+		got, err := app.seederRunTimes("auth")
+		require.NoError(t, err)
+		assert.Empty(t, got)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("query error propagates", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders`).
+			WillReturnError(assert.AnError)
+
+		_, err := app.seederRunTimes("auth")
+		assert.ErrorIs(t, err, assert.AnError)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("row scan error propagates", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}).
+				AddRow("0001", "not-a-time"))
+
+		_, err := app.seederRunTimes("auth")
+		require.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+// ---- namespaceSeederState ----
+
+func TestNamespaceSeederState(t *testing.T) {
+	t.Run("mix of run and pending", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.registerSeederForNamespace("auth",
+			&trackingFakeSeeder{name: "0001"},
+			&trackingFakeSeeder{name: "0002"},
+			&trackingFakeSeeder{name: "0003"},
+		))
+
+		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}).
+				AddRow("0001", t1).
+				AddRow("0002", t2))
+			// 0003 not run
+
+		state, err := app.namespaceSeederState("auth")
+		require.NoError(t, err)
+
+		assert.Equal(t, "auth", state.Namespace)
+		assert.Equal(t, 1, state.Pending)
+		require.Len(t, state.Statuses, 3)
+
+		assert.Equal(t, SeederStatus{Namespace: "auth", Name: "0001", HasRun: true, RanAt: &t1}, state.Statuses[0])
+		assert.Equal(t, SeederStatus{Namespace: "auth", Name: "0002", HasRun: true, RanAt: &t2}, state.Statuses[1])
+		assert.Equal(t, SeederStatus{Namespace: "auth", Name: "0003", HasRun: false, RanAt: nil}, state.Statuses[2])
+
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("nothing run", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.registerSeederForNamespace("auth", &trackingFakeSeeder{name: "0001"}))
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}))
+
+		state, err := app.namespaceSeederState("auth")
+		require.NoError(t, err)
+		assert.Equal(t, 1, state.Pending)
+		assert.False(t, state.Statuses[0].HasRun)
+		assert.Nil(t, state.Statuses[0].RanAt)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("everything run", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.registerSeederForNamespace("auth",
+			&trackingFakeSeeder{name: "0001"},
+			&trackingFakeSeeder{name: "0002"},
+		))
+
+		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}).
+				AddRow("0001", t1).
+				AddRow("0002", t2))
+
+		state, err := app.namespaceSeederState("auth")
+		require.NoError(t, err)
+		assert.Equal(t, 0, state.Pending)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("namespace with no registered seeders", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs("empty-namespace").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}))
+
+		state, err := app.namespaceSeederState("empty-namespace")
+		require.NoError(t, err)
+		assert.Equal(t, "empty-namespace", state.Namespace)
+		assert.Equal(t, 0, state.Pending)
+		assert.Empty(t, state.Statuses)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("seederRunTimes error propagates", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.registerSeederForNamespace("auth", &trackingFakeSeeder{name: "0001"}))
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders`).
+			WillReturnError(assert.AnError)
+
+		_, err := app.namespaceSeederState("auth")
+		assert.ErrorIs(t, err, assert.AnError)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+// ---- SeederState ----
+
+func TestSeederState(t *testing.T) {
+	t.Run("ensureSeedersTable failure short-circuits", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_seeders`).
+			WillReturnError(assert.AnError)
+
+		_, err := app.SeederState()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ensure seeders table")
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("no namespaces registered returns empty slice, no error", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_seeders`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+
+		got, err := app.SeederState()
+		require.NoError(t, err)
+		assert.Empty(t, got)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("aggregates state across multiple namespaces in plugin-first order", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		app.plugins = []plugin.Plugin{&fakePlugin{name: "pluginA"}}
+
+		require.NoError(t, app.registerSeederForNamespace("pluginA",
+			&trackingFakeSeeder{name: "0001"},
+			&trackingFakeSeeder{name: "0002"},
+		))
+		require.NoError(t, app.registerSeederForNamespace(hostAppNamespace,
+			&trackingFakeSeeder{name: "0001"},
+		))
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_seeders`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+
+		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs("pluginA").
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}).
+				AddRow("0001", t1))
+
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders WHERE namespace = \?`).
+			WithArgs(hostAppNamespace).
+			WillReturnRows(sqlmock.NewRows([]string{"name", "run_at"}))
+
+		got, err := app.SeederState()
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+
+		assert.Equal(t, "pluginA", got[0].Namespace)
+		assert.Equal(t, 1, got[0].Pending)
+
+		assert.Equal(t, hostAppNamespace, got[1].Namespace)
+		assert.Equal(t, 1, got[1].Pending)
+
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("per-namespace query error is wrapped with namespace context", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.registerSeederForNamespace("auth", &trackingFakeSeeder{name: "0001"}))
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_seeders`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT name, run_at FROM hypercube_seeders`).
+			WillReturnError(assert.AnError)
+
+		_, err := app.SeederState()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `get seeder state for namespace "auth"`)
+		assert.ErrorIs(t, err, assert.AnError)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}

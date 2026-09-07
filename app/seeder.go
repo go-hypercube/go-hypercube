@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-hypercube/go-hypercube/seeder"
 )
@@ -209,4 +210,149 @@ func (app *App) SeedAll(force bool) error {
 		}
 	}
 	return nil
+}
+
+// SeederStatus describes a single registered seeder's status within
+// its namespace: whether it has run, and when.
+type SeederStatus struct {
+	Namespace string
+	Name      string
+	HasRun    bool
+	RanAt     *time.Time // nil if HasRun is false
+}
+
+// NamespaceSeederState summarizes the seeding state of a single
+// namespace: every registered seeder (in ascending Name order) along
+// with its run status, plus a count of how many are still pending.
+//
+// Unlike NamespaceMigrationState, there is no single "Current" seeder
+// name — seeders aren't a linear, sequentially-applied history the way
+// migrations are, so any subset can be run independently or re-run via
+// force.
+type NamespaceSeederState struct {
+	Namespace string
+	Pending   int // count of registered seeders not yet run
+	Statuses  []SeederStatus
+}
+
+// SeederState returns the current run state of every namespace that
+// has at least one registered seeder, ordered the same way SeedAll
+// orders namespaces: plugin namespaces first (in app.plugins'
+// dependency order), then any remaining namespaces (e.g.
+// hostAppNamespace) in sorted order.
+//
+// SeederState reads the tracking table directly rather than calling
+// hasRun per seeder, so it reflects the database's current state in a
+// single query per namespace even for namespaces with many seeders.
+//
+// Returns an error if the seeders table doesn't exist yet (call
+// ensureSeedersTable first, e.g. by running any seeder) or the query
+// fails.
+func (app *App) SeederState() ([]*NamespaceSeederState, error) {
+	if err := app.ensureSeedersTable(); err != nil {
+		return nil, fmt.Errorf("ensure seeders table: %w", err)
+	}
+
+	orderedNamespaces := app.orderedSeederNamespaces()
+	result := make([]*NamespaceSeederState, 0, len(orderedNamespaces))
+
+	for _, namespace := range orderedNamespaces {
+		state, err := app.namespaceSeederState(namespace)
+		if err != nil {
+			return nil, fmt.Errorf("get seeder state for namespace %q: %w", namespace, err)
+		}
+		result = append(result, state)
+	}
+	return result, nil
+}
+
+// namespaceSeederState builds the NamespaceSeederState for a single
+// namespace by fetching all run (name -> run_at) pairs in one query,
+// then walking the namespace's registered seeders in order.
+func (app *App) namespaceSeederState(namespace string) (*NamespaceSeederState, error) {
+	ordered := app.seeders.GetNamespace(namespace) // sorted by Name ascending
+
+	runTimes, err := app.seederRunTimes(namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	state := &NamespaceSeederState{
+		Namespace: namespace,
+		Statuses:  make([]SeederStatus, 0, len(ordered)),
+	}
+
+	for _, s := range ordered {
+		ranAt, ok := runTimes[s.Name()]
+		status := SeederStatus{
+			Namespace: namespace,
+			Name:      s.Name(),
+			HasRun:    ok,
+		}
+		if ok {
+			t := ranAt
+			status.RanAt = &t
+		} else {
+			state.Pending++
+		}
+		state.Statuses = append(state.Statuses, status)
+	}
+	return state, nil
+}
+
+// seederRunTimes returns a map of seeder name -> run_at for every
+// seeder currently recorded as run under namespace.
+func (app *App) seederRunTimes(namespace string) (map[string]time.Time, error) {
+	dbDriver := app.readDbDriver()
+	query := fmt.Sprintf(
+		`SELECT name, run_at FROM %s WHERE namespace = %s`,
+		seedersTable, dbDriver.placeholder(1),
+	)
+	rows, err := app.database.Query(query, namespace)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string]time.Time)
+	for rows.Next() {
+		var name string
+		var ranAt time.Time
+		if err := rows.Scan(&name, &ranAt); err != nil {
+			return nil, err
+		}
+		result[name] = ranAt
+	}
+	return result, rows.Err()
+}
+
+// orderedSeederNamespaces returns the namespaces that have at least one
+// registered seeder, ordered the same way SeedAll runs them: plugin
+// namespaces first (in app.plugins' dependency order), then any
+// remaining namespaces in sorted order.
+func (app *App) orderedSeederNamespaces() []string {
+	registered := make(map[string]struct{})
+	for _, namespace := range app.seeders.Namespaces() {
+		registered[namespace] = struct{}{}
+	}
+
+	seen := make(map[string]struct{}, len(app.plugins))
+	ordered := make([]string, 0, len(registered))
+
+	for _, p := range app.plugins {
+		namespace := p.Name()
+		if _, has := registered[namespace]; !has {
+			continue
+		}
+		ordered = append(ordered, namespace)
+		seen[namespace] = struct{}{}
+	}
+
+	for _, namespace := range app.seeders.Namespaces() { // already sorted
+		if _, done := seen[namespace]; done {
+			continue
+		}
+		ordered = append(ordered, namespace)
+	}
+	return ordered
 }

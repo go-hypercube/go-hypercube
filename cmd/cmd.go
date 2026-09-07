@@ -109,7 +109,7 @@ func (s NamespacedSlice) Contains(namespace, name string) bool {
 func (s NamespacedSlice) GetCommand(namespace, name string) Command {
 	for _, ns := range s {
 		if ns.Namespace == namespace && ns.Name() == name {
-			return ns
+			return ns.Command
 		}
 	}
 	return nil
