@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-hypercube/go-hypercube/migration"
@@ -93,6 +94,12 @@ func (app *App) ensureMigrationsTable() error {
 			PRIMARY KEY (namespace, name)
 		)`, migrationsTable))
 	return err
+}
+
+type appliedMigrationEntry struct {
+	namespace string
+	name      string
+	appliedAt time.Time
 }
 
 // isApplied reports whether the migration (namespace, name) has already
@@ -323,6 +330,97 @@ func (app *App) migrateNamespaceUpToLatest(namespace string) error {
 	return app.RunMigrationsUpTo(namespace, latest)
 }
 
+// MigrateAllDown reverts every applied migration across every
+// namespace — a full teardown, the mirror image of MigrateAllUp.
+//
+// Order matters here, and it is the exact reverse of MigrateAllUp:
+// non-plugin namespaces (e.g. hostAppNamespace) are torn down first,
+// then plugin namespaces are torn down in reverse dependency order
+// (dependents before their dependencies) — so if plugin B depends on
+// plugin A, B's migrations are reverted before A's. This mirrors how a
+// real teardown must work: you cannot safely drop what a dependent
+// still relies on.
+//
+// MigrateAllDown must be called after Setup(); it returns an error if
+// Setup() has not run yet.
+//
+// Returns the first error encountered from RunMigrationsDownTo, leaving
+// namespaces torn down so far in their newly-reverted state.
+func (app *App) MigrateAllDown() error {
+	if !app.didSetup {
+		return fmt.Errorf("cannot migrate before setting up the framework; did you forget to call Setup()")
+	}
+
+	pluginNamespaces := make(map[string]struct{}, len(app.plugins))
+	for _, p := range app.plugins {
+		pluginNamespaces[p.Name()] = struct{}{}
+	}
+
+	// Non-plugin namespaces first (sorted, for determinism), since
+	// nothing in app.plugins depends on them by definition.
+	for _, namespace := range app.migrations.Namespaces() {
+		if _, isPlugin := pluginNamespaces[namespace]; isPlugin {
+			continue
+		}
+		if err := app.RunMigrationsDownTo(namespace, ""); err != nil {
+			return err
+		}
+	}
+
+	// Then plugin namespaces in reverse dependency order: app.plugins
+	// is sorted dependency-first by initPlugins (dependencies before
+	// dependents), so walking it backwards tears down dependents before
+	// the dependencies they rely on.
+	for i := len(app.plugins) - 1; i >= 0; i-- {
+		namespace := app.plugins[i].Name()
+		if err := app.RunMigrationsDownTo(namespace, ""); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// RollbackSteps reverts the steps most-recently-applied migrations in
+// namespace, ordered by when they were actually applied (not by
+// namespace/name order) — so a migration applied out of order is
+// still rolled back in the correct chronological sequence.
+//
+// If steps is greater than or equal to the number of currently applied
+// migrations in namespace, every applied migration is reverted (same
+// effect as RunMigrationsDownTo(namespace, "")). If steps is zero or
+// negative, RollbackSteps is a no-op.
+//
+// Returns an error if reading the current applied state fails, or if
+// reverting any migration fails — in which case migrations already
+// reverted before the failure remain reverted.
+func (app *App) RollbackSteps(namespace string, steps int) error {
+	if steps <= 0 {
+		return nil
+	}
+
+	if err := app.ensureMigrationsTable(); err != nil {
+		return fmt.Errorf("ensure migrations table: %w", err)
+	}
+
+	appliedEntries, err := app.appliedMigrations(namespace)
+	if err != nil {
+		return fmt.Errorf("read applied state for namespace %q: %w", namespace, err)
+	}
+	if len(appliedEntries) == 0 {
+		return nil
+	}
+
+	var target string
+	if steps >= len(appliedEntries) {
+		target = "" // revert every applied migration
+	} else {
+		target = appliedEntries[len(appliedEntries)-steps-1].name
+	}
+
+	return app.RunMigrationsDownTo(namespace, target)
+}
+
 // MigrationStatus describes a single registered migration's position
 // within its namespace and whether it has been applied.
 type MigrationStatus struct {
@@ -379,13 +477,36 @@ func (app *App) MigrationState() ([]*NamespaceMigrationState, error) {
 	return result, nil
 }
 
+// AppliedMigrations list all the applied migrations ordered
+// by `applied_at` in descending order, meaning the newest or most
+// recent records appear first
+func (app *App) AppliedMigrations() ([]*MigrationStatus, error) {
+	appliedMigrations, err := app.appliedMigrations("")
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*MigrationStatus, 0, len(appliedMigrations))
+	for _, m := range appliedMigrations {
+		result = append(
+			result,
+			&MigrationStatus{
+				Namespace: m.namespace,
+				Name:      m.name,
+				Applied:   true,
+				AppliedAt: &m.appliedAt,
+			},
+		)
+	}
+	return result, nil
+}
+
 // namespaceMigrationState builds the MigrationState for a single
 // namespace by fetching all applied (name -> applied_at) pairs in one
 // query, then walking the namespace's registered migrations in order.
 func (app *App) namespaceMigrationState(namespace string) (*NamespaceMigrationState, error) {
 	ordered := app.migrations.GetNamespace(namespace) // sorted by Name ascending
 
-	applied, err := app.appliedTimes(namespace)
+	applied, err := app.appliedMigrations(namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -395,16 +516,24 @@ func (app *App) namespaceMigrationState(namespace string) (*NamespaceMigrationSt
 		Statuses:  make([]MigrationStatus, 0, len(ordered)),
 	}
 
+	isApplied := func(name string) *time.Time {
+		for _, m := range applied {
+			if m.name == name {
+				return &m.appliedAt
+			}
+		}
+		return nil
+	}
+
 	for _, m := range ordered {
-		appliedAt, ok := applied[m.Name]
+		appliedAt := isApplied(m.Name)
 		status := MigrationStatus{
 			Namespace: namespace,
 			Name:      m.Name,
-			Applied:   ok,
+			Applied:   appliedAt != nil,
 		}
-		if ok {
-			t := appliedAt
-			status.AppliedAt = &t
+		if appliedAt != nil {
+			status.AppliedAt = appliedAt
 			state.Current = m.Name // ordered ascending, so the last match wins
 		} else {
 			state.Pending++
@@ -414,28 +543,37 @@ func (app *App) namespaceMigrationState(namespace string) (*NamespaceMigrationSt
 	return state, nil
 }
 
-// appliedTimes returns a map of migration name -> applied_at for every
-// migration currently recorded as applied under namespace.
-func (app *App) appliedTimes(namespace string) (map[string]time.Time, error) {
-	dbDriver := app.readDbDriver()
-	query := fmt.Sprintf(
-		`SELECT name, applied_at FROM %s WHERE namespace = %s`,
-		migrationsTable, dbDriver.placeholder(1),
-	)
-	rows, err := app.database.Query(query, namespace)
+// appliedMigrations returns a slice of appliedMigrationEntry structs ordered in
+// descending order, meaning the newest or most recent records appear first.
+// It reflects migrations currently recorded as applied under the given namespace.
+// Pass empty string to get all the entries.
+func (app *App) appliedMigrations(namespace string) ([]*appliedMigrationEntry, error) {
+	query := strings.Builder{}
+	fmt.Fprintf(&query, "SELECT namespace, name, applied_at FROM %s", migrationsTable)
+	if namespace != "" {
+		fmt.Fprintf(&query, " WHERE namespace = %s", app.readDbDriver().placeholder(1))
+	}
+	query.WriteString(" ORDER By applied_at DESC")
+
+	rows, err := app.database.Query(query.String(), namespace)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	result := make(map[string]time.Time)
+	var result []*appliedMigrationEntry
 	for rows.Next() {
+		var namespace string
 		var name string
 		var appliedAt time.Time
-		if err := rows.Scan(&name, &appliedAt); err != nil {
+		if err := rows.Scan(&namespace, &name, &appliedAt); err != nil {
 			return nil, err
 		}
-		result[name] = appliedAt
+		result = append(result, &appliedMigrationEntry{
+			namespace: namespace,
+			name:      name,
+			appliedAt: appliedAt,
+		})
 	}
 	return result, rows.Err()
 }
@@ -446,7 +584,9 @@ func (app *App) appliedTimes(namespace string) (map[string]time.Time, error) {
 // then any remaining namespaces in sorted order.
 func (app *App) orderedMigrationNamespaces() []string {
 	registered := make(map[string]struct{})
-	for _, namespace := range app.migrations.Namespaces() {
+	namespaces := app.migrations.Namespaces() // already sorted
+
+	for _, namespace := range namespaces {
 		registered[namespace] = struct{}{}
 	}
 
@@ -462,7 +602,7 @@ func (app *App) orderedMigrationNamespaces() []string {
 		seen[namespace] = struct{}{}
 	}
 
-	for _, namespace := range app.migrations.Namespaces() { // already sorted
+	for _, namespace := range namespaces {
 		if _, done := seen[namespace]; done {
 			continue
 		}

@@ -650,26 +650,44 @@ func TestAppliedTimes(t *testing.T) {
 		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WithArgs("auth").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}).
-				AddRow("0001", t1).
-				AddRow("0002", t2))
+			WillReturnRows(
+				sqlmock.NewRows([]string{"namespace", "name", "applied_at"}).
+					AddRow("auth", "0001", t1).
+					AddRow("auth", "0002", t2),
+			)
 
-		got, err := app.appliedTimes("auth")
+		got, err := app.appliedMigrations("auth")
 		require.NoError(t, err)
-		assert.Equal(t, map[string]time.Time{"0001": t1, "0002": t2}, got)
+		assert.True(t, assert.ObjectsAreEqualValues(
+			appliedMigrationEntry{
+				namespace: "auth",
+				name:      "0001",
+				appliedAt: t1,
+			},
+			*got[0],
+		))
+		assert.True(t, assert.ObjectsAreEqualValues(
+			appliedMigrationEntry{
+				namespace: "auth",
+				name:      "0002",
+				appliedAt: t2,
+			},
+			*got[1],
+		))
+
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("postgres dialect uses $1 placeholder", func(t *testing.T) {
 		app, mock := newMockApp(t, "postgres")
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \$1`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \$1 ORDER By applied_at DESC`).
 			WithArgs("auth").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}))
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}))
 
-		got, err := app.appliedTimes("auth")
+		got, err := app.appliedMigrations("auth")
 		require.NoError(t, err)
 		assert.Empty(t, got)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -678,11 +696,11 @@ func TestAppliedTimes(t *testing.T) {
 	t.Run("empty result set", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WithArgs("auth").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}))
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}))
 
-		got, err := app.appliedTimes("auth")
+		got, err := app.appliedMigrations("auth")
 		require.NoError(t, err)
 		assert.Empty(t, got)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -691,10 +709,10 @@ func TestAppliedTimes(t *testing.T) {
 	t.Run("query error propagates", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WillReturnError(assert.AnError)
 
-		_, err := app.appliedTimes("auth")
+		_, err := app.appliedMigrations("auth")
 		assert.ErrorIs(t, err, assert.AnError)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -702,12 +720,12 @@ func TestAppliedTimes(t *testing.T) {
 	t.Run("row scan error propagates", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
 			WithArgs("auth").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}).
-				AddRow("0001", "not-a-time")) // wrong type triggers Scan error
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}).
+				AddRow("auth", "0001", "not-a-time")) // wrong type triggers Scan error
 
-		_, err := app.appliedTimes("auth")
+		_, err := app.appliedMigrations("auth")
 		require.Error(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -727,11 +745,11 @@ func TestNamespaceMigrationState(t *testing.T) {
 		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WithArgs("auth").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}).
-				AddRow("0001", t1).
-				AddRow("0002", t2))
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}).
+				AddRow("auth", "0001", t1).
+				AddRow("auth", "0002", t2))
 			// 0003 not applied
 
 		state, err := app.namespaceMigrationState("auth")
@@ -755,9 +773,9 @@ func TestNamespaceMigrationState(t *testing.T) {
 			&migration.Migration{Name: "0001"},
 		))
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WithArgs("auth").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}))
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}))
 
 		state, err := app.namespaceMigrationState("auth")
 		require.NoError(t, err)
@@ -778,11 +796,11 @@ func TestNamespaceMigrationState(t *testing.T) {
 		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WithArgs("auth").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}).
-				AddRow("0001", t1).
-				AddRow("0002", t2))
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}).
+				AddRow("auth", "0001", t1).
+				AddRow("auth", "0002", t2))
 
 		state, err := app.namespaceMigrationState("auth")
 		require.NoError(t, err)
@@ -794,9 +812,9 @@ func TestNamespaceMigrationState(t *testing.T) {
 	t.Run("namespace with no registered migrations", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WithArgs("empty-namespace").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}))
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}))
 
 		state, err := app.namespaceMigrationState("empty-namespace")
 		require.NoError(t, err)
@@ -811,7 +829,7 @@ func TestNamespaceMigrationState(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth", &migration.Migration{Name: "0001"}))
 
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WillReturnError(assert.AnError)
 
 		_, err := app.namespaceMigrationState("auth")
@@ -868,15 +886,15 @@ func TestMigrationState(t *testing.T) {
 		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 		// pluginA queried first
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WithArgs("pluginA").
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}).
-				AddRow("0001", t1))
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}).
+				AddRow("pluginA", "0001", t1))
 
 		// frameworkDevNamespace queried second
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations WHERE namespace = \?`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WithArgs(hostAppNamespace).
-			WillReturnRows(sqlmock.NewRows([]string{"name", "applied_at"}))
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}))
 
 		got, err := app.MigrationState()
 		require.NoError(t, err)
@@ -900,7 +918,7 @@ func TestMigrationState(t *testing.T) {
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectQuery(`SELECT name, applied_at FROM hypercube_migrations`).
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations`).
 			WillReturnError(assert.AnError)
 
 		_, err := app.MigrationState()
@@ -1022,5 +1040,244 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 		err := app.RegisterMigration(&migration.Migration{Name: "0001"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "already registered")
+	})
+}
+
+// ---- MigrateAllDown ----
+
+func TestMigrateAllDown(t *testing.T) {
+	t.Run("errors if Setup has not been called", func(t *testing.T) {
+		app := &App{didSetup: false}
+		err := app.MigrateAllDown()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "did you forget to call Setup()")
+	})
+
+	t.Run("tears down non-plugin namespaces first, then plugins in reverse dependency order", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		app.didSetup = true
+		// dependency order from initPlugins: pluginA before pluginB
+		// (pluginB depends on pluginA) -> reverse teardown: pluginB then pluginA
+		app.plugins = []plugin.Plugin{
+			&fakePlugin{name: "pluginA"},
+			&fakePlugin{name: "pluginB"},
+		}
+
+		require.NoError(t, app.registerMigrationForNamespace("pluginA",
+			&migration.Migration{Name: "0001", Down: []string{"drop table pa"}}))
+		require.NoError(t, app.registerMigrationForNamespace("pluginB",
+			&migration.Migration{Name: "0001", Down: []string{"drop table pb"}}))
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
+			&migration.Migration{Name: "0001", Down: []string{"drop table dev"}}))
+
+		// hostAppNamespace first (only non-plugin namespace)
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs(hostAppNamespace, "0001").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`drop table dev`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		mock.ExpectExec(`DELETE FROM hypercube_migrations`).WithArgs(hostAppNamespace, "0001").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		// pluginB torn down before pluginA (reverse dependency order)
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("pluginB", "0001").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`drop table pb`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		mock.ExpectExec(`DELETE FROM hypercube_migrations`).WithArgs("pluginB", "0001").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("pluginA", "0001").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`drop table pa`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		mock.ExpectExec(`DELETE FROM hypercube_migrations`).WithArgs("pluginA", "0001").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := app.MigrateAllDown()
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("stops at first namespace that fails", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		app.didSetup = true
+		app.plugins = []plugin.Plugin{&fakePlugin{name: "pluginA"}}
+
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
+			&migration.Migration{Name: "0001", Down: []string{"bad sql"}}))
+		require.NoError(t, app.registerMigrationForNamespace("pluginA",
+			&migration.Migration{Name: "0001", Down: []string{"drop table pa"}}))
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs(hostAppNamespace, "0001").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`bad sql`).WillReturnError(assert.AnError)
+		mock.ExpectRollback()
+
+		err := app.MigrateAllDown()
+		require.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet()) // pluginA never reached
+	})
+}
+
+// ---- RollbackSteps ----
+
+func TestRollbackSteps(t *testing.T) {
+	t.Run("zero or negative steps is a no-op", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.RollbackSteps("auth", 0))
+		require.NoError(t, app.RollbackSteps("auth", -1))
+		require.NoError(t, mock.ExpectationsWereMet()) // no DB calls at all
+	})
+
+	t.Run("reverts exactly the N most-recently-applied migrations", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001", Down: []string{"drop table a"}},
+			&migration.Migration{Name: "0002", Down: []string{"drop table b"}},
+			&migration.Migration{Name: "0003", Down: []string{"drop table c"}},
+		))
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}).
+				AddRow("auth", "0001", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+				AddRow("auth", "0002", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)).
+				AddRow("auth", "0003", time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)))
+
+		// rolling back 1 step -> target becomes 0002, so only 0003 reverts
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("auth", "0003").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`drop table c`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		mock.ExpectExec(`DELETE FROM hypercube_migrations`).WithArgs("auth", "0003").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := app.RollbackSteps("auth", 1)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("steps greater than or equal to applied count reverts everything", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001", Down: []string{"drop table a"}},
+			&migration.Migration{Name: "0002", Down: []string{"drop table b"}},
+		))
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}).
+				AddRow("auth", "0001", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+				AddRow("auth", "0002", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)))
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("auth", "0002").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`drop table b`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		mock.ExpectExec(`DELETE FROM hypercube_migrations`).WithArgs("auth", "0002").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("auth", "0001").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`drop table a`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		mock.ExpectExec(`DELETE FROM hypercube_migrations`).WithArgs("auth", "0001").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := app.RollbackSteps("auth", 99)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("nothing applied is a no-op after checking state", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		require.NoError(t, app.registerMigrationForNamespace("auth",
+			&migration.Migration{Name: "0001"}))
+
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations`).
+			WithArgs("auth").
+			WillReturnRows(sqlmock.NewRows([]string{"namespace", "name", "applied_at"}))
+
+		err := app.RollbackSteps("auth", 1)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("ensureMigrationsTable failure short-circuits", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnError(assert.AnError)
+
+		err := app.RollbackSteps("auth", 1)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ensure migrations table")
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("tears down dependents before their dependencies", func(t *testing.T) {
+		app, mock := newMockApp(t, "")
+		app.didSetup = true
+		// pluginB depends on pluginA, so after initPlugins-style sorting,
+		// app.plugins is [pluginA, pluginB] (dependency-first).
+		app.plugins = []plugin.Plugin{
+			&fakePlugin{name: "pluginA"},
+			&fakePlugin{name: "pluginB"},
+		}
+
+		require.NoError(t, app.registerMigrationForNamespace("pluginA",
+			&migration.Migration{Name: "0001", Down: []string{"drop table pa"}}))
+		require.NoError(t, app.registerMigrationForNamespace("pluginB",
+			&migration.Migration{Name: "0001", Down: []string{"drop table pb"}}))
+
+		// pluginB (the dependent) must be torn down FIRST
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("pluginB", "0001").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`drop table pb`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		mock.ExpectExec(`DELETE FROM hypercube_migrations`).WithArgs("pluginB", "0001").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		// pluginA (the dependency) torn down SECOND
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT EXISTS`).WithArgs("pluginA", "0001").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectBegin()
+		mock.ExpectExec(`drop table pa`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		mock.ExpectExec(`DELETE FROM hypercube_migrations`).WithArgs("pluginA", "0001").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := app.MigrateAllDown()
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet(), "sqlmock enforces call order, so this fails if pluginA were torn down before pluginB")
 	})
 }
