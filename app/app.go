@@ -2,6 +2,7 @@ package app
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -28,21 +29,17 @@ type App struct {
 	didBoot    bool
 }
 
-type Options struct {
-	Config   config.Config
-	Database *sql.DB
-	Cache    cache.Cache
-	Logger   *slog.Logger
-}
-
-func New(op *Options) *App {
+func New(op *Options) (*App, error) {
+	if err := op.validate(); err != nil {
+		return nil, err
+	}
 	return &App{
 		config:   op.Config,
 		database: op.Database,
 		cache:    op.Cache,
 		logger:   op.Logger,
 		services: container.NewServiceContainer(),
-	}
+	}, nil
 }
 
 func (app *App) Config() config.Config { return app.config }
@@ -119,5 +116,28 @@ func (app *App) Boot() error {
 	}
 
 	app.didBoot = true
+	return nil
+}
+
+type Options struct {
+	Config   config.Config
+	Database *sql.DB
+	Cache    cache.Cache
+	Logger   *slog.Logger
+}
+
+func (o Options) validate() error {
+	if o.Config == nil {
+		return errors.New("config is required")
+	}
+	if o.Database == nil {
+		return errors.New("database is required")
+	}
+	if o.Cache == nil {
+		return errors.New("cache is required")
+	}
+	if o.Logger == nil {
+		return errors.New("logger is required")
+	}
 	return nil
 }
