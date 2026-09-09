@@ -3,6 +3,7 @@ package app
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	"github.com/go-hypercube/go-hypercube/cache"
 	"github.com/go-hypercube/go-hypercube/cmd"
@@ -22,15 +23,24 @@ type App struct {
 	seeders    seeder.NamespacedSlice
 	cmds       cmd.NamespacedSlice
 	services   *container.ServiceContainer
+	logger     *slog.Logger
 	didSetup   bool
 	didBoot    bool
 }
 
-func New(config config.Config, database *sql.DB, cache cache.Cache) *App {
+type Options struct {
+	Config   config.Config
+	Database *sql.DB
+	Cache    cache.Cache
+	Logger   *slog.Logger
+}
+
+func New(op *Options) *App {
 	return &App{
-		config:   config,
-		database: database,
-		cache:    cache,
+		config:   op.Config,
+		database: op.Database,
+		cache:    op.Cache,
+		logger:   op.Logger,
 		services: container.NewServiceContainer(),
 	}
 }
@@ -38,6 +48,7 @@ func New(config config.Config, database *sql.DB, cache cache.Cache) *App {
 func (app *App) Config() config.Config { return app.config }
 func (app *App) DB() *sql.DB           { return app.database }
 func (app *App) Cache() cache.Cache    { return app.cache }
+func (app *App) Logger() *slog.Logger  { return app.logger }
 
 func (app *App) Setup() error {
 	if app.didSetup {
@@ -52,10 +63,13 @@ func (app *App) Setup() error {
 	for _, p := range app.plugins {
 		registration, err := p.Register(
 			plugin.NewAppForPlugin(
-				p,
-				app.database,
-				app.cache,
-				app.services,
+				&plugin.Options{
+					Plugin:    p,
+					Database:  app.database,
+					Cache:     app.cache,
+					Logger:    app.logger.With("plugin", p.Name()),
+					Container: app.services,
+				},
 			),
 		)
 		if err != nil {
@@ -90,10 +104,13 @@ func (app *App) Boot() error {
 	for _, p := range app.plugins {
 		err := p.Boot(
 			plugin.NewAppForPlugin(
-				p,
-				app.database,
-				app.cache,
-				app.services,
+				&plugin.Options{
+					Plugin:    p,
+					Database:  app.database,
+					Cache:     app.cache,
+					Logger:    app.logger.With("plugin", p.Name()),
+					Container: app.services,
+				},
 			),
 		)
 		if err != nil {

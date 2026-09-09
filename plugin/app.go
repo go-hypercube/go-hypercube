@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"database/sql"
+	"log/slog"
 
 	"github.com/go-hypercube/go-hypercube/cache"
 	"github.com/go-hypercube/go-hypercube/internal/container"
@@ -13,19 +14,25 @@ type App struct {
 	DB    *sql.DB
 	Cache cache.Cache
 
+	Logger *slog.Logger
+
 	container *container.ServiceContainer
 }
 
-func NewAppForPlugin(
-	plugin Plugin,
-	db *sql.DB,
-	cache cache.Cache,
-	container *container.ServiceContainer,
-) *App {
+type Options struct {
+	Plugin    Plugin
+	Database  *sql.DB
+	Cache     cache.Cache
+	Logger    *slog.Logger
+	Container *container.ServiceContainer
+}
+
+func NewAppForPlugin(op *Options) *App {
 	return &App{
-		plugin:    plugin,
-		DB:        db,
-		Cache:     cache,
-		container: container,
+		plugin:    op.Plugin,
+		DB:        op.Database,
+		Cache:     op.Cache,
+		container: op.Container,
+		Logger:    op.Logger,
 	}
 }

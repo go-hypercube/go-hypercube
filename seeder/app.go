@@ -2,32 +2,37 @@ package seeder
 
 import (
 	"database/sql"
+	"log/slog"
 
 	"github.com/go-hypercube/go-hypercube/cache"
 	"github.com/go-hypercube/go-hypercube/internal/container"
 )
 
-// App is the scoped context passed to a Seeder's Run method, mirroring
-// cmd.App and plugin.App.
 type App struct {
 	seeder Seeder
 
 	DB    *sql.DB
 	Cache cache.Cache
 
+	Logger *slog.Logger
+
 	container *container.ServiceContainer
 }
 
-func NewAppForSeeder(
-	seeder Seeder,
-	db *sql.DB,
-	cache cache.Cache,
-	container *container.ServiceContainer,
-) *App {
+type Options struct {
+	Seeder    Seeder
+	Database  *sql.DB
+	Cache     cache.Cache
+	Logger    *slog.Logger
+	Container *container.ServiceContainer
+}
+
+func NewAppForSeeder(op *Options) *App {
 	return &App{
-		seeder:    seeder,
-		DB:        db,
-		Cache:     cache,
-		container: container,
+		seeder:    op.Seeder,
+		DB:        op.Database,
+		Cache:     op.Cache,
+		container: op.Container,
+		Logger:    op.Logger,
 	}
 }

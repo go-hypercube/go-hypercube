@@ -140,7 +140,14 @@ func (app *App) RunSeeder(namespace, name string, force bool) error {
 		}
 	}
 
-	if err := s.Run(seeder.NewAppForSeeder(s, app.database, app.cache, app.services)); err != nil {
+	if err := s.Run(seeder.NewAppForSeeder(
+		&seeder.Options{
+			Seeder:    s,
+			Database:  app.database,
+			Cache:     app.cache,
+			Logger:    app.logger.With("namespace", namespace, "seeder", s.Name()),
+			Container: app.services,
+		})); err != nil {
 		return fmt.Errorf("run seeder %q/%q: %w", namespace, name, err)
 	}
 

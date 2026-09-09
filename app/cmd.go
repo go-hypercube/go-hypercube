@@ -59,9 +59,12 @@ func (app *App) RunCommand(namespace, cmdName string) (any, error) {
 		return nil, fmt.Errorf("command %q not found in namespace %q", cmdName, namespace)
 	}
 	return command.Run(cmd.NewAppForCmd(
-		command,
-		app.database,
-		app.cache,
-		app.services,
+		&cmd.Options{
+			Cmd:       command,
+			Database:  app.database,
+			Cache:     app.cache,
+			Logger:    app.logger.With("namespace", namespace, "command", command.Name()),
+			Container: app.services,
+		},
 	))
 }
