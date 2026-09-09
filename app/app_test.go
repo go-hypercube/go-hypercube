@@ -1,12 +1,14 @@
 package app
 
 import (
+	"log/slog"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/plugin"
 	"github.com/stretchr/testify/require"
+	memorycache "github.com/go-hypercube/hypercube-cache-memory"
 )
 
 // fakePlugin is a minimal plugin.Plugin used across tests. It supports
@@ -35,10 +37,14 @@ func newMockApp(t *testing.T, driverName string) (*App, sqlmock.Sqlmock) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	app := &App{
-		config:   newFakeConfig(map[string]string{"DB_DRIVER": driverName}),
-		database: db,
-	}
+	app, err := New(
+		&Options{
+			Config:   newFakeConfig(map[string]string{"DB_DRIVER": driverName}),
+			Logger:   slog.Default(),
+			Database: db,
+			Cache:    memorycache.New(),
+		})
+	require.NoError(t, err)
 	return app, mock
 }
 

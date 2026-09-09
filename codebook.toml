@@ -1,7 +1,8 @@
 words = [
-    "statementbegin",
-    "statementend",
+    "Sqlmock",
     "gofumpt",
     "golangci",
-    "Sqlmock",
+    "memorycache",
+    "statementbegin",
+    "statementend",
 ]
