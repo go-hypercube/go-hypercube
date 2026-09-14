@@ -16,8 +16,8 @@ import (
 func TestRegisterMigration(t *testing.T) {
 	app := &App{}
 
-	m1 := &migration.Migration{Name: "0001_a", Up: []string{"up1"}, Down: []string{"down1"}}
-	m2 := &migration.Migration{Name: "0002_b", Up: []string{"up2"}, Down: []string{"down2"}}
+	m1 := &migration.Migration{MigrationName: "0001_a", Up: []string{"up1"}, Down: []string{"down1"}}
+	m2 := &migration.Migration{MigrationName: "0002_b", Up: []string{"up2"}, Down: []string{"down2"}}
 
 	err := app.RegisterMigration(m1, m2)
 	require.NoError(t, err)
@@ -25,18 +25,18 @@ func TestRegisterMigration(t *testing.T) {
 	got := app.Migrations()
 	require.Len(t, got, 2)
 	assert.Equal(t, hostAppNamespace, got[0].Namespace)
-	assert.Equal(t, "0001_a", got[0].Name)
+	assert.Equal(t, "0001_a", got[0].Item.MigrationName)
 	assert.Equal(t, hostAppNamespace, got[1].Namespace)
-	assert.Equal(t, "0002_b", got[1].Name)
+	assert.Equal(t, "0002_b", got[1].Item.MigrationName)
 }
 
 func TestRegisterMigrationForNamespace_Appends(t *testing.T) {
 	app := &App{}
 
 	require.NoError(t, app.registerMigrationForNamespace("pluginA",
-		&migration.Migration{Name: "0001"}))
+		&migration.Migration{MigrationName: "0001"}))
 	require.NoError(t, app.registerMigrationForNamespace("pluginB",
-		&migration.Migration{Name: "0001"}))
+		&migration.Migration{MigrationName: "0001"}))
 
 	got := app.Migrations()
 	require.Len(t, got, 2)
@@ -48,9 +48,9 @@ func TestRegisterMigrationForNamespace_Appends(t *testing.T) {
 
 func TestIndexOfMigration(t *testing.T) {
 	ordered := []*migration.Migration{
-		{Name: "0001"},
-		{Name: "0002"},
-		{Name: "0003"},
+		{MigrationName: "0001"},
+		{MigrationName: "0002"},
+		{MigrationName: "0003"},
 	}
 
 	assert.Equal(t, 0, indexOfMigration(ordered, "0001"))
@@ -275,9 +275,9 @@ func TestRunMigrationsUpTo(t *testing.T) {
 	t.Run("applies not-yet-applied migrations up to and including target", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001", Up: []string{"create table a"}},
-			&migration.Migration{Name: "0002", Up: []string{"create table b"}},
-			&migration.Migration{Name: "0003", Up: []string{"create table c"}}, // beyond target, must not run
+			&migration.Migration{MigrationName: "0001", Up: []string{"create table a"}},
+			&migration.Migration{MigrationName: "0002", Up: []string{"create table b"}},
+			&migration.Migration{MigrationName: "0003", Up: []string{"create table c"}}, // beyond target, must not run
 		))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -306,7 +306,7 @@ func TestRunMigrationsUpTo(t *testing.T) {
 	t.Run("target not found in namespace", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001"}))
+			&migration.Migration{MigrationName: "0001"}))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
@@ -320,8 +320,8 @@ func TestRunMigrationsUpTo(t *testing.T) {
 	t.Run("stops and returns error when an Up statement fails, later migrations not attempted", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001", Up: []string{"bad sql"}},
-			&migration.Migration{Name: "0002", Up: []string{"create table b"}},
+			&migration.Migration{MigrationName: "0001", Up: []string{"bad sql"}},
+			&migration.Migration{MigrationName: "0002", Up: []string{"create table b"}},
 		))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -357,9 +357,9 @@ func TestRunMigrationsDownTo(t *testing.T) {
 	t.Run("reverts newest-first down to but not including target", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001", Down: []string{"drop table a"}}, // at/before target: untouched
-			&migration.Migration{Name: "0002", Down: []string{"drop table b"}}, // reverted
-			&migration.Migration{Name: "0003", Down: []string{"drop table c"}}, // reverted first
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table a"}}, // at/before target: untouched
+			&migration.Migration{MigrationName: "0002", Down: []string{"drop table b"}}, // reverted
+			&migration.Migration{MigrationName: "0003", Down: []string{"drop table c"}}, // reverted first
 		))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -395,12 +395,12 @@ func TestRunMigrationsDownTo(t *testing.T) {
 
 		require.NoError(t, app.registerMigrationForNamespace("auth",
 			&migration.Migration{
-				Name: "0001",
-				Down: []string{"drop table a"},
+				MigrationName: "0001",
+				Down:          []string{"drop table a"},
 			},
 			&migration.Migration{
-				Name: "0002",
-				Down: []string{"drop table b"},
+				MigrationName: "0002",
+				Down:          []string{"drop table b"},
 			},
 		))
 
@@ -442,7 +442,7 @@ func TestRunMigrationsDownTo(t *testing.T) {
 	t.Run("never-applied migrations are skipped without reverting", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001", Down: []string{"drop table a"}},
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table a"}},
 		))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -459,7 +459,7 @@ func TestRunMigrationsDownTo(t *testing.T) {
 	t.Run("target not found in namespace", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001"}))
+			&migration.Migration{MigrationName: "0001"}))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
@@ -485,8 +485,8 @@ func TestMigrateNamespaceUpToLatest(t *testing.T) {
 	t.Run("migrates up to the newest registered migration", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001", Up: []string{"create table a"}},
-			&migration.Migration{Name: "0002", Up: []string{"create table b"}},
+			&migration.Migration{MigrationName: "0001", Up: []string{"create table a"}},
+			&migration.Migration{MigrationName: "0002", Up: []string{"create table b"}},
 		))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -521,11 +521,11 @@ func TestMigrateAllUp(t *testing.T) {
 		}
 
 		require.NoError(t, app.registerMigrationForNamespace("pluginB",
-			&migration.Migration{Name: "0001", Up: []string{"create table pb"}}))
+			&migration.Migration{MigrationName: "0001", Up: []string{"create table pb"}}))
 		require.NoError(t, app.registerMigrationForNamespace("pluginA",
-			&migration.Migration{Name: "0001", Up: []string{"create table pa"}}))
+			&migration.Migration{MigrationName: "0001", Up: []string{"create table pa"}}))
 		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
-			&migration.Migration{Name: "0001", Up: []string{"create table dev"}}))
+			&migration.Migration{MigrationName: "0001", Up: []string{"create table dev"}}))
 
 		// pluginB migrated first
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -572,9 +572,9 @@ func TestMigrateAllUp(t *testing.T) {
 		app.plugins = []plugin.Plugin{&fakePlugin{name: "pluginA"}}
 
 		require.NoError(t, app.registerMigrationForNamespace("pluginA",
-			&migration.Migration{Name: "0001", Up: []string{"bad sql"}}))
+			&migration.Migration{MigrationName: "0001", Up: []string{"bad sql"}}))
 		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
-			&migration.Migration{Name: "0001", Up: []string{"create table dev"}}))
+			&migration.Migration{MigrationName: "0001", Up: []string{"create table dev"}}))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
@@ -601,10 +601,10 @@ func TestOrderedMigrationNamespaces(t *testing.T) {
 			&fakePlugin{name: "pluginA"}, // deliberately not alpha: order must be preserved
 		}
 
-		require.NoError(t, app.registerMigrationForNamespace("pluginB", &migration.Migration{Name: "0001"}))
-		require.NoError(t, app.registerMigrationForNamespace("pluginA", &migration.Migration{Name: "0001"}))
-		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace, &migration.Migration{Name: "0001"}))
-		require.NoError(t, app.registerMigrationForNamespace("zzz-no-plugin", &migration.Migration{Name: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace("pluginB", &migration.Migration{MigrationName: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace("pluginA", &migration.Migration{MigrationName: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace, &migration.Migration{MigrationName: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace("zzz-no-plugin", &migration.Migration{MigrationName: "0001"}))
 
 		got := app.orderedMigrationNamespaces()
 		// pluginB, pluginA (plugin order preserved) then sorted remainder:
@@ -617,7 +617,7 @@ func TestOrderedMigrationNamespaces(t *testing.T) {
 		app.plugins = []plugin.Plugin{
 			&fakePlugin{name: "pluginA"}, // has no migrations registered
 		}
-		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace, &migration.Migration{Name: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace, &migration.Migration{MigrationName: "0001"}))
 
 		got := app.orderedMigrationNamespaces()
 		assert.Equal(t, []string{hostAppNamespace}, got)
@@ -625,8 +625,8 @@ func TestOrderedMigrationNamespaces(t *testing.T) {
 
 	t.Run("no plugins, only sorted remainder", func(t *testing.T) {
 		app := &App{}
-		require.NoError(t, app.registerMigrationForNamespace("billing", &migration.Migration{Name: "0001"}))
-		require.NoError(t, app.registerMigrationForNamespace("auth", &migration.Migration{Name: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace("billing", &migration.Migration{MigrationName: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace("auth", &migration.Migration{MigrationName: "0001"}))
 
 		got := app.orderedMigrationNamespaces()
 		assert.Equal(t, []string{"auth", "billing"}, got)
@@ -737,9 +737,9 @@ func TestNamespaceMigrationState(t *testing.T) {
 	t.Run("mix of applied and pending, Current is highest applied Name", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001"},
-			&migration.Migration{Name: "0002"},
-			&migration.Migration{Name: "0003"},
+			&migration.Migration{MigrationName: "0001"},
+			&migration.Migration{MigrationName: "0002"},
+			&migration.Migration{MigrationName: "0003"},
 		))
 
 		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -770,7 +770,7 @@ func TestNamespaceMigrationState(t *testing.T) {
 	t.Run("nothing applied", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001"},
+			&migration.Migration{MigrationName: "0001"},
 		))
 
 		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
@@ -789,8 +789,8 @@ func TestNamespaceMigrationState(t *testing.T) {
 	t.Run("everything applied", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001"},
-			&migration.Migration{Name: "0002"},
+			&migration.Migration{MigrationName: "0001"},
+			&migration.Migration{MigrationName: "0002"},
 		))
 
 		t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -827,7 +827,7 @@ func TestNamespaceMigrationState(t *testing.T) {
 
 	t.Run("appliedTimes error propagates", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
-		require.NoError(t, app.registerMigrationForNamespace("auth", &migration.Migration{Name: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace("auth", &migration.Migration{MigrationName: "0001"}))
 
 		mock.ExpectQuery(`SELECT namespace, name, applied_at FROM hypercube_migrations WHERE namespace = \? ORDER By applied_at DESC`).
 			WillReturnError(assert.AnError)
@@ -873,11 +873,11 @@ func TestMigrationState(t *testing.T) {
 		app.plugins = []plugin.Plugin{&fakePlugin{name: "pluginA"}}
 
 		require.NoError(t, app.registerMigrationForNamespace("pluginA",
-			&migration.Migration{Name: "0001"},
-			&migration.Migration{Name: "0002"},
+			&migration.Migration{MigrationName: "0001"},
+			&migration.Migration{MigrationName: "0002"},
 		))
 		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
-			&migration.Migration{Name: "0001"},
+			&migration.Migration{MigrationName: "0001"},
 		))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -914,7 +914,7 @@ func TestMigrationState(t *testing.T) {
 	t.Run("per-namespace query error is wrapped with namespace context", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		app.didSetup = true
-		require.NoError(t, app.registerMigrationForNamespace("auth", &migration.Migration{Name: "0001"}))
+		require.NoError(t, app.registerMigrationForNamespace("auth", &migration.Migration{MigrationName: "0001"}))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
@@ -935,10 +935,10 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 	t.Run("second registration of the same (namespace, name) is rejected", func(t *testing.T) {
 		app := &App{}
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_init"}))
+			&migration.Migration{MigrationName: "0001_init"}))
 
 		err := app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_init"})
+			&migration.Migration{MigrationName: "0001_init"})
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), `migration "0001_init" is already registered in namespace "auth"`)
@@ -946,11 +946,11 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 
 	t.Run("existing registration is left untouched after a rejected duplicate", func(t *testing.T) {
 		app := &App{}
-		original := &migration.Migration{Name: "0001_init", Up: []string{"create table a"}}
+		original := &migration.Migration{MigrationName: "0001_init", Up: []string{"create table a"}}
 		require.NoError(t, app.registerMigrationForNamespace("auth", original))
 
 		err := app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_init", Up: []string{"create table b"}})
+			&migration.Migration{MigrationName: "0001_init", Up: []string{"create table b"}})
 		require.Error(t, err)
 
 		got := app.migrations.GetNamespace("auth")
@@ -961,10 +961,10 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 	t.Run("same name in a different namespace does not collide", func(t *testing.T) {
 		app := &App{}
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_init"}))
+			&migration.Migration{MigrationName: "0001_init"}))
 
 		err := app.registerMigrationForNamespace("billing",
-			&migration.Migration{Name: "0001_init"})
+			&migration.Migration{MigrationName: "0001_init"})
 		require.NoError(t, err)
 
 		assert.Len(t, app.migrations.GetNamespace("auth"), 1)
@@ -974,26 +974,26 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 	t.Run("batch registration is atomic: a collision partway through registers none of the batch", func(t *testing.T) {
 		app := &App{}
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0002_existing"}))
+			&migration.Migration{MigrationName: "0002_existing"}))
 
 		err := app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_new"},
-			&migration.Migration{Name: "0002_existing"}, // collides
-			&migration.Migration{Name: "0003_new"},
+			&migration.Migration{MigrationName: "0001_new"},
+			&migration.Migration{MigrationName: "0002_existing"}, // collides
+			&migration.Migration{MigrationName: "0003_new"},
 		)
 		require.Error(t, err)
 
 		got := app.migrations.GetNamespace("auth")
 		require.Len(t, got, 1, "none of the new batch should be registered when any one of them collides")
-		assert.Equal(t, "0002_existing", got[0].Name)
+		assert.Equal(t, "0002_existing", got[0].MigrationName)
 	})
 
 	t.Run("collision within the same batch (no prior registration) is also rejected", func(t *testing.T) {
 		app := &App{}
 
 		err := app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_dup"},
-			&migration.Migration{Name: "0001_dup"},
+			&migration.Migration{MigrationName: "0001_dup"},
+			&migration.Migration{MigrationName: "0001_dup"},
 		)
 		require.Error(t, err)
 	})
@@ -1002,8 +1002,8 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 		app := &App{}
 
 		err := app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_dup"},
-			&migration.Migration{Name: "0001_dup"},
+			&migration.Migration{MigrationName: "0001_dup"},
+			&migration.Migration{MigrationName: "0001_dup"},
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), `migration "0001_dup" appears more than once in this registration call for namespace "auth"`)
@@ -1013,9 +1013,9 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 		app := &App{}
 
 		err := app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_first"},
-			&migration.Migration{Name: "0002_dup"},
-			&migration.Migration{Name: "0002_dup"},
+			&migration.Migration{MigrationName: "0001_first"},
+			&migration.Migration{MigrationName: "0002_dup"},
+			&migration.Migration{MigrationName: "0002_dup"},
 		)
 		require.Error(t, err)
 		assert.Empty(t, app.migrations.GetNamespace("auth"), "no migration from the batch should be registered, including the ones before the collision")
@@ -1025,9 +1025,9 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 		app := &App{}
 
 		err := app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001_a"},
-			&migration.Migration{Name: "0001_a"},
-			&migration.Migration{Name: "0002_b"},
+			&migration.Migration{MigrationName: "0001_a"},
+			&migration.Migration{MigrationName: "0001_a"},
+			&migration.Migration{MigrationName: "0002_b"},
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), `"0001_a" appears more than once`)
@@ -1035,9 +1035,9 @@ func TestRegisterMigrationForNamespace_RejectsDuplicateName(t *testing.T) {
 
 	t.Run("RegisterMigration surfaces the same rejection", func(t *testing.T) {
 		app := &App{}
-		require.NoError(t, app.RegisterMigration(&migration.Migration{Name: "0001"}))
+		require.NoError(t, app.RegisterMigration(&migration.Migration{MigrationName: "0001"}))
 
-		err := app.RegisterMigration(&migration.Migration{Name: "0001"})
+		err := app.RegisterMigration(&migration.Migration{MigrationName: "0001"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "already registered")
 	})
@@ -1064,11 +1064,11 @@ func TestMigrateAllDown(t *testing.T) {
 		}
 
 		require.NoError(t, app.registerMigrationForNamespace("pluginA",
-			&migration.Migration{Name: "0001", Down: []string{"drop table pa"}}))
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table pa"}}))
 		require.NoError(t, app.registerMigrationForNamespace("pluginB",
-			&migration.Migration{Name: "0001", Down: []string{"drop table pb"}}))
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table pb"}}))
 		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
-			&migration.Migration{Name: "0001", Down: []string{"drop table dev"}}))
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table dev"}}))
 
 		// hostAppNamespace first (only non-plugin namespace)
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -1113,9 +1113,9 @@ func TestMigrateAllDown(t *testing.T) {
 		app.plugins = []plugin.Plugin{&fakePlugin{name: "pluginA"}}
 
 		require.NoError(t, app.registerMigrationForNamespace(hostAppNamespace,
-			&migration.Migration{Name: "0001", Down: []string{"bad sql"}}))
+			&migration.Migration{MigrationName: "0001", Down: []string{"bad sql"}}))
 		require.NoError(t, app.registerMigrationForNamespace("pluginA",
-			&migration.Migration{Name: "0001", Down: []string{"drop table pa"}}))
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table pa"}}))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
@@ -1144,9 +1144,9 @@ func TestRollbackSteps(t *testing.T) {
 	t.Run("reverts exactly the N most-recently-applied migrations", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001", Down: []string{"drop table a"}},
-			&migration.Migration{Name: "0002", Down: []string{"drop table b"}},
-			&migration.Migration{Name: "0003", Down: []string{"drop table c"}},
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table a"}},
+			&migration.Migration{MigrationName: "0002", Down: []string{"drop table b"}},
+			&migration.Migration{MigrationName: "0003", Down: []string{"drop table c"}},
 		))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -1177,8 +1177,8 @@ func TestRollbackSteps(t *testing.T) {
 	t.Run("steps greater than or equal to applied count reverts everything", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001", Down: []string{"drop table a"}},
-			&migration.Migration{Name: "0002", Down: []string{"drop table b"}},
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table a"}},
+			&migration.Migration{MigrationName: "0002", Down: []string{"drop table b"}},
 		))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
@@ -1215,7 +1215,7 @@ func TestRollbackSteps(t *testing.T) {
 	t.Run("nothing applied is a no-op after checking state", func(t *testing.T) {
 		app, mock := newMockApp(t, "")
 		require.NoError(t, app.registerMigrationForNamespace("auth",
-			&migration.Migration{Name: "0001"}))
+			&migration.Migration{MigrationName: "0001"}))
 
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
@@ -1250,9 +1250,9 @@ func TestRollbackSteps(t *testing.T) {
 		}
 
 		require.NoError(t, app.registerMigrationForNamespace("pluginA",
-			&migration.Migration{Name: "0001", Down: []string{"drop table pa"}}))
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table pa"}}))
 		require.NoError(t, app.registerMigrationForNamespace("pluginB",
-			&migration.Migration{Name: "0001", Down: []string{"drop table pb"}}))
+			&migration.Migration{MigrationName: "0001", Down: []string{"drop table pb"}}))
 
 		// pluginB (the dependent) must be torn down FIRST
 		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS hypercube_migrations`).

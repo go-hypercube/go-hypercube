@@ -20,7 +20,7 @@ func TestRegisterCommandForNamespace_OverridesExistingByName(t *testing.T) {
 
 		got := app.cmds
 		require.Len(t, got, 1)
-		assert.Same(t, replacement, got[0].Command)
+		assert.Same(t, replacement, got[0].Item)
 	})
 
 	t.Run("replacement preserves original position", func(t *testing.T) {
@@ -35,9 +35,9 @@ func TestRegisterCommandForNamespace_OverridesExistingByName(t *testing.T) {
 
 		got := app.cmds
 		require.Len(t, got, 3)
-		assert.Same(t, c1, got[0].Command)
-		assert.Same(t, replacement, got[1].Command)
-		assert.Same(t, c3, got[2].Command)
+		assert.Same(t, c1, got[0].Item)
+		assert.Same(t, replacement, got[1].Item)
+		assert.Same(t, c3, got[2].Item)
 	})
 
 	t.Run("same name in a different namespace is unaffected", func(t *testing.T) {

@@ -39,9 +39,9 @@ func TestRegisterSeeder(t *testing.T) {
 	got := app.Seeders()
 	require.Len(t, got, 2)
 	assert.Equal(t, hostAppNamespace, got[0].Namespace)
-	assert.Equal(t, "0001_users", got[0].Name())
+	assert.Equal(t, "0001_users", got[0].Item.Name())
 	assert.Equal(t, hostAppNamespace, got[1].Namespace)
-	assert.Equal(t, "0002_roles", got[1].Name())
+	assert.Equal(t, "0002_roles", got[1].Item.Name())
 }
 
 func TestRegisterSeederForNamespace_Appends(t *testing.T) {
@@ -504,7 +504,7 @@ func TestRegisterSeederForNamespace_OverridesExistingByName(t *testing.T) {
 
 		got := app.Seeders()
 		require.Len(t, got, 1, "must not accumulate duplicate entries for the same namespace+name")
-		assert.Same(t, replacement, got[0].Seeder, "the later registration must win")
+		assert.Same(t, replacement, got[0].Item, "the later registration must win")
 	})
 
 	t.Run("replacement preserves original position in registration order", func(t *testing.T) {
@@ -520,9 +520,9 @@ func TestRegisterSeederForNamespace_OverridesExistingByName(t *testing.T) {
 
 		got := app.Seeders()
 		require.Len(t, got, 3)
-		assert.Same(t, s1, got[0].Seeder)
-		assert.Same(t, replacement, got[1].Seeder, "replacement should occupy the original slot, not move to the end")
-		assert.Same(t, s3, got[2].Seeder)
+		assert.Same(t, s1, got[0].Item)
+		assert.Same(t, replacement, got[1].Item, "replacement should occupy the original slot, not move to the end")
+		assert.Same(t, s3, got[2].Item)
 	})
 
 	t.Run("same name in a different namespace is not affected", func(t *testing.T) {
@@ -536,8 +536,13 @@ func TestRegisterSeederForNamespace_OverridesExistingByName(t *testing.T) {
 
 		seeders := app.Seeders()
 		require.Equal(t, len(seeders), 2, "same seeder name in different namespaces must both be kept")
-		assert.Same(t, authSeeder, seeders.GetSeeder("auth", "init"))
-		assert.Same(t, billingSeeder, seeders.GetSeeder("billing", "init"))
+
+		s1, ok1 := seeders.Get("auth", "init")
+		s2, ok2 := seeders.Get("billing", "init")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Same(t, authSeeder, s1)
+		assert.Same(t, billingSeeder, s2)
 	})
 
 	t.Run("GetSeeder returns the replacement after override", func(t *testing.T) {
@@ -548,8 +553,8 @@ func TestRegisterSeederForNamespace_OverridesExistingByName(t *testing.T) {
 		require.NoError(t, app.registerSeederForNamespace("auth", original))
 		require.NoError(t, app.registerSeederForNamespace("auth", replacement))
 
-		got := app.Seeders().GetSeeder("auth", "0001")
-		require.NotNil(t, got)
+		got, ok := app.Seeders().Get("auth", "0001")
+		require.True(t, ok)
 		assert.Same(t, replacement, got)
 	})
 
@@ -588,8 +593,13 @@ func TestRegisterSeederForNamespace_OverridesExistingByName(t *testing.T) {
 
 		got := app.Seeders()
 		require.Len(t, got, 2)
-		assert.Same(t, replacement, got.GetSeeder("auth", "0001"))
-		assert.Same(t, brandNew, got.GetSeeder("auth", "0002"))
+
+		s1, ok1 := got.Get("auth", "0001")
+		s2, ok2 := got.Get("auth", "0002")
+		assert.True(t, ok1)
+		assert.True(t, ok2)
+		assert.Same(t, replacement, s1)
+		assert.Same(t, brandNew, s2)
 	})
 }
 

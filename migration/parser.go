@@ -80,9 +80,9 @@ func ParseRawMigration(migrationName, content string) (*Migration, error) {
 		return nil, fmt.Errorf("parse migration: %w in %q", err, migrationName)
 	}
 	return &Migration{
-		Name: migrationName,
-		Up:   up,
-		Down: down,
+		MigrationName: migrationName,
+		Up:            up,
+		Down:          down,
 	}, nil
 }
 

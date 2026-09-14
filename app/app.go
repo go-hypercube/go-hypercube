@@ -11,6 +11,7 @@ import (
 	"github.com/go-hypercube/go-hypercube/config"
 	"github.com/go-hypercube/go-hypercube/internal/container"
 	"github.com/go-hypercube/go-hypercube/migration"
+	"github.com/go-hypercube/go-hypercube/namespaced"
 	"github.com/go-hypercube/go-hypercube/plugin"
 	"github.com/go-hypercube/go-hypercube/seeder"
 )
@@ -20,9 +21,9 @@ type App struct {
 	database   *sql.DB
 	cache      cache.Cache
 	plugins    []plugin.Plugin
-	migrations migration.NamespacedSlice
-	seeders    seeder.NamespacedSlice
-	cmds       cmd.NamespacedSlice
+	migrations namespaced.NamespacedSlice[*migration.Migration]
+	seeders    namespaced.NamespacedSlice[seeder.Seeder]
+	cmds       namespaced.NamespacedSlice[cmd.Command]
 	services   *container.ServiceContainer
 	logger     *slog.Logger
 	didSetup   bool

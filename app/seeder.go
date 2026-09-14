@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-hypercube/go-hypercube/namespaced"
 	"github.com/go-hypercube/go-hypercube/seeder"
 )
 
 // Seeders returns all seeders registered with the app across every
 // namespace (both framework-owned and plugin-owned), in registration
 // order.
-func (app *App) Seeders() seeder.NamespacedSlice { return app.seeders }
+func (app *App) Seeders() namespaced.NamespacedSlice[seeder.Seeder] { return app.seeders }
 
 // RegisterSeeder registers seeders under the framework's own reserved
 // namespace (frameworkDevNamespace), as opposed to a plugin's
@@ -36,7 +37,7 @@ func (app *App) registerSeederForNamespace(namespace string, seeders ...seeder.S
 
 		replaced := false
 		for i, existing := range app.seeders {
-			if existing.Namespace == namespace && existing.Name() == s.Name() {
+			if existing.Namespace == namespace && existing.Item.Name() == s.Name() {
 				app.seeders[i] = namespaced
 				replaced = true
 				break
@@ -125,8 +126,8 @@ func (app *App) RunSeeder(namespace, name string, force bool) error {
 		return fmt.Errorf("ensure seeders table: %w", err)
 	}
 
-	s := app.seeders.GetSeeder(namespace, name)
-	if s == nil {
+	s, ok := app.seeders.Get(namespace, name)
+	if !ok {
 		return fmt.Errorf("seeder %q not found in namespace %q", name, namespace)
 	}
 

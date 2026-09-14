@@ -3,6 +3,7 @@ package seeder_test
 import (
 	"testing"
 
+	"github.com/go-hypercube/go-hypercube/namespaced"
 	"github.com/go-hypercube/go-hypercube/seeder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,7 @@ func (s *fakeSeeder) Name() string            { return s.name }
 func (s *fakeSeeder) Run(_ *seeder.App) error { return nil }
 
 func TestNamespacedSlice_GetNamespace(t *testing.T) {
-	slice := seeder.NamespacedSlice{
+	slice := namespaced.NamespacedSlice[seeder.Seeder]{
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "b"}),
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "a"}),
 		seeder.NewNamespaced("billing", &fakeSeeder{name: "x"}),
@@ -38,7 +39,7 @@ func TestNamespacedSlice_GetNamespace(t *testing.T) {
 }
 
 func TestNamespacedSlice_GroupByNamespace(t *testing.T) {
-	slice := seeder.NamespacedSlice{
+	slice := namespaced.NamespacedSlice[seeder.Seeder]{
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "z"}),
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "a"}),
 		seeder.NewNamespaced("billing", &fakeSeeder{name: "m"}),
@@ -56,7 +57,7 @@ func TestNamespacedSlice_GroupByNamespace(t *testing.T) {
 }
 
 func TestNamespacedSlice_Sort(t *testing.T) {
-	slice := seeder.NamespacedSlice{
+	slice := namespaced.NamespacedSlice[seeder.Seeder]{
 		seeder.NewNamespaced("b", &fakeSeeder{name: "b"}),
 		seeder.NewNamespaced("a", &fakeSeeder{name: "z"}),
 		seeder.NewNamespaced("a", &fakeSeeder{name: "a"}),
@@ -66,15 +67,15 @@ func TestNamespacedSlice_Sort(t *testing.T) {
 
 	require.Len(t, slice, 3)
 	assert.Equal(t, "a", slice[0].Namespace)
-	assert.Equal(t, "a", slice[0].Name())
+	assert.Equal(t, "a", slice[0].Item.Name())
 	assert.Equal(t, "a", slice[1].Namespace)
-	assert.Equal(t, "z", slice[1].Name())
+	assert.Equal(t, "z", slice[1].Item.Name())
 	assert.Equal(t, "b", slice[2].Namespace)
-	assert.Equal(t, "b", slice[2].Name())
+	assert.Equal(t, "b", slice[2].Item.Name())
 }
 
 func TestNamespacedSlice_Namespaces(t *testing.T) {
-	slice := seeder.NamespacedSlice{
+	slice := namespaced.NamespacedSlice[seeder.Seeder]{
 		seeder.NewNamespaced("billing", &fakeSeeder{name: "x"}),
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "a"}),
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "b"}),
@@ -86,7 +87,7 @@ func TestNamespacedSlice_Namespaces(t *testing.T) {
 }
 
 func TestNamespacedSlice_Contains(t *testing.T) {
-	slice := seeder.NamespacedSlice{
+	slice := namespaced.NamespacedSlice[seeder.Seeder]{
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "init"}),
 		seeder.NewNamespaced("billing", &fakeSeeder{name: "create_invoices"}),
 	}
@@ -105,33 +106,35 @@ func TestNamespacedSlice_Contains(t *testing.T) {
 
 func TestNamespacedSlice_GetSeeder(t *testing.T) {
 	target := &fakeSeeder{name: "init"}
-	slice := seeder.NamespacedSlice{
+	slice := namespaced.NamespacedSlice[seeder.Seeder]{
 		seeder.NewNamespaced("auth", target),
 		seeder.NewNamespaced("billing", &fakeSeeder{name: "init"}), // same name, different namespace
 	}
 
 	t.Run("found returns matching namespaced seeder", func(t *testing.T) {
-		got := slice.GetSeeder("auth", "init")
-		require.NotNil(t, got)
+		got, ok := slice.Get("auth", "init")
+		require.True(t, ok)
 		assert.Equal(t, "init", got.Name())
 	})
 
 	t.Run("not found returns nil", func(t *testing.T) {
-		assert.Nil(t, slice.GetSeeder("auth", "does-not-exist"))
-		assert.Nil(t, slice.GetSeeder("unknown", "init"))
+		_, ok := slice.Get("auth", "does-not-exist")
+		assert.False(t, ok)
+		_, ok = slice.Get("unknown", "init")
+		assert.False(t, ok)
 	})
 
 	t.Run("namespace disambiguates same-named seeders", func(t *testing.T) {
-		gotAuth := slice.GetSeeder("auth", "init")
-		gotBilling := slice.GetSeeder("billing", "init")
-		require.NotNil(t, gotAuth)
-		require.NotNil(t, gotBilling)
+		gotAuth, ok := slice.Get("auth", "init")
+		require.True(t, ok)
+		gotBilling, ok := slice.Get("billing", "init")
+		require.True(t, ok)
 		assert.NotSame(t, gotAuth, gotBilling)
 	})
 }
 
 func TestNamespacedSlice_GetNamespaces(t *testing.T) {
-	slice := seeder.NamespacedSlice{
+	slice := namespaced.NamespacedSlice[seeder.Seeder]{
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "b"}),
 		seeder.NewNamespaced("auth", &fakeSeeder{name: "a"}),
 		seeder.NewNamespaced("billing", &fakeSeeder{name: "x"}),
@@ -142,18 +145,18 @@ func TestNamespacedSlice_GetNamespaces(t *testing.T) {
 		got := slice.GetNamespaces("auth", "billing")
 		require.Len(t, got, 3)
 		assert.Equal(t, "auth", got[0].Namespace)
-		assert.Equal(t, "a", got[0].Name())
+		assert.Equal(t, "a", got[0].Item.Name())
 		assert.Equal(t, "auth", got[1].Namespace)
-		assert.Equal(t, "b", got[1].Name())
+		assert.Equal(t, "b", got[1].Item.Name())
 		assert.Equal(t, "billing", got[2].Namespace)
-		assert.Equal(t, "x", got[2].Name())
+		assert.Equal(t, "x", got[2].Item.Name())
 	})
 
 	t.Run("single namespace", func(t *testing.T) {
 		got := slice.GetNamespaces("auth")
 		require.Len(t, got, 2)
-		assert.Equal(t, "a", got[0].Name())
-		assert.Equal(t, "b", got[1].Name())
+		assert.Equal(t, "a", got[0].Item.Name())
+		assert.Equal(t, "b", got[1].Item.Name())
 	})
 
 	t.Run("no arguments returns nil", func(t *testing.T) {

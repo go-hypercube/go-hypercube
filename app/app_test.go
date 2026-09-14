@@ -7,8 +7,8 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/plugin"
-	"github.com/stretchr/testify/require"
 	memorycache "github.com/go-hypercube/hypercube-cache-memory"
+	"github.com/stretchr/testify/require"
 )
 
 // fakePlugin is a minimal plugin.Plugin used across tests. It supports

@@ -456,7 +456,7 @@ func TestParseRawMigration(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, m)
 
-		assert.Equal(t, "000001_create_a.sql", m.Name)
+		assert.Equal(t, "000001_create_a.sql", m.MigrationName)
 		assert.Equal(t, []string{
 			"create table a (id int);",
 		}, m.Up)
@@ -483,7 +483,7 @@ func TestParseRawMigration(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, m)
 
-		assert.Equal(t, "000002_create_function.sql", m.Name)
+		assert.Equal(t, "000002_create_function.sql", m.MigrationName)
 
 		require.Len(t, m.Up, 1)
 		assert.Contains(t, m.Up[0], "perform 1;")

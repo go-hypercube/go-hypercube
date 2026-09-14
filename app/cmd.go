@@ -31,7 +31,7 @@ func (app *App) registerCommandForNamespace(namespace string, cmds ...cmd.Comman
 
 		replaced := false
 		for i, existing := range app.cmds {
-			if existing.Namespace == namespace && existing.Name() == c.Name() {
+			if existing.Namespace == namespace && existing.Item.Name() == c.Name() {
 				app.cmds[i] = namespaced
 				replaced = true
 				break
@@ -54,8 +54,8 @@ func (app *App) registerCommandForNamespace(namespace string, cmds ...cmd.Comman
 // letting commands hand back arbitrary results (e.g. a report struct, a
 // count, a generated ID) to the caller of RunCommand.
 func (app *App) RunCommand(namespace, cmdName string) (any, error) {
-	command := app.cmds.GetCommand(namespace, cmdName)
-	if command == nil {
+	command, ok := app.cmds.Get(namespace, cmdName)
+	if !ok {
 		return nil, fmt.Errorf("command %q not found in namespace %q", cmdName, namespace)
 	}
 	return command.Run(cmd.NewAppForCmd(

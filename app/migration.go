@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/go-hypercube/go-hypercube/migration"
+	"github.com/go-hypercube/go-hypercube/namespaced"
 )
 
 // Migrations returns all migrations registered with the app across every
 // namespace (both framework-owned and plugin-owned), in registration
 // order. Use migration.NamespacedSlice's own helpers (GetNamespace,
 // GroupByNamespace, Namespaces, etc.) to filter or group the result.
-func (app *App) Migrations() migration.NamespacedSlice { return app.migrations }
+func (app *App) Migrations() namespaced.NamespacedSlice[*migration.Migration] { return app.migrations }
 
 // RegisterMigration registers migrations under the framework's own
 // reserved namespace (frameworkDevNamespace), as opposed to a plugin's
@@ -61,16 +62,16 @@ func (app *App) RegisterMigrationFromFs(files embed.FS) error {
 func (app *App) registerMigrationForNamespace(namespace string, migrations ...*migration.Migration) error {
 	seenInBatch := make(map[string]struct{}, len(migrations))
 	for _, m := range migrations {
-		if app.migrations.Contains(namespace, m.Name) {
-			return fmt.Errorf("migration %q is already registered in namespace %q", m.Name, namespace)
+		if app.migrations.Contains(namespace, m.MigrationName) {
+			return fmt.Errorf("migration %q is already registered in namespace %q", m.MigrationName, namespace)
 		}
-		if _, dup := seenInBatch[m.Name]; dup {
-			return fmt.Errorf("migration %q appears more than once in this registration call for namespace %q", m.Name, namespace)
+		if _, dup := seenInBatch[m.MigrationName]; dup {
+			return fmt.Errorf("migration %q appears more than once in this registration call for namespace %q", m.MigrationName, namespace)
 		}
-		seenInBatch[m.Name] = struct{}{}
+		seenInBatch[m.MigrationName] = struct{}{}
 	}
 
-	namespacedMigrations := make([]*migration.Namespaced, len(migrations))
+	namespacedMigrations := make([]*namespaced.Namespaced[*migration.Migration], len(migrations))
 	for i, m := range migrations {
 		namespacedMigrations[i] = migration.NewNamespaced(namespace, m)
 	}
@@ -172,9 +173,9 @@ func (app *App) RunMigrationsUpTo(namespace, target string) error {
 	}
 
 	for _, m := range ordered[:targetIdx+1] {
-		applied, err := app.isApplied(namespace, m.Name)
+		applied, err := app.isApplied(namespace, m.MigrationName)
 		if err != nil {
-			return fmt.Errorf("check applied state of %q: %w", m.Name, err)
+			return fmt.Errorf("check applied state of %q: %w", m.MigrationName, err)
 		}
 		if applied {
 			continue
@@ -182,17 +183,17 @@ func (app *App) RunMigrationsUpTo(namespace, target string) error {
 
 		tx, err := app.database.Begin()
 		if err != nil {
-			return fmt.Errorf("begin tx for %q: %w", m.Name, err)
+			return fmt.Errorf("begin tx for %q: %w", m.MigrationName, err)
 		}
 		if err := runStatements(tx, m.Up); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("apply %q/%q: %w", namespace, m.Name, err)
+			return fmt.Errorf("apply %q/%q: %w", namespace, m.MigrationName, err)
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit %q/%q: %w", namespace, m.Name, err)
+			return fmt.Errorf("commit %q/%q: %w", namespace, m.MigrationName, err)
 		}
-		if err := app.markApplied(namespace, m.Name); err != nil {
-			return fmt.Errorf("record applied %q/%q: %w", namespace, m.Name, err)
+		if err := app.markApplied(namespace, m.MigrationName); err != nil {
+			return fmt.Errorf("record applied %q/%q: %w", namespace, m.MigrationName, err)
 		}
 	}
 	return nil
@@ -233,9 +234,9 @@ func (app *App) RunMigrationsDownTo(namespace, target string) error {
 	// Revert from the newest migration back down to (but not including) target.
 	for i := len(ordered) - 1; i >= startIdx; i-- {
 		m := ordered[i]
-		applied, err := app.isApplied(namespace, m.Name)
+		applied, err := app.isApplied(namespace, m.MigrationName)
 		if err != nil {
-			return fmt.Errorf("check applied state of %q: %w", m.Name, err)
+			return fmt.Errorf("check applied state of %q: %w", m.MigrationName, err)
 		}
 		if !applied {
 			continue
@@ -243,17 +244,17 @@ func (app *App) RunMigrationsDownTo(namespace, target string) error {
 
 		tx, err := app.database.Begin()
 		if err != nil {
-			return fmt.Errorf("begin tx for %q: %w", m.Name, err)
+			return fmt.Errorf("begin tx for %q: %w", m.MigrationName, err)
 		}
 		if err := runStatements(tx, m.Down); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("revert %q/%q: %w", namespace, m.Name, err)
+			return fmt.Errorf("revert %q/%q: %w", namespace, m.MigrationName, err)
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit revert %q/%q: %w", namespace, m.Name, err)
+			return fmt.Errorf("commit revert %q/%q: %w", namespace, m.MigrationName, err)
 		}
-		if err := app.markReverted(namespace, m.Name); err != nil {
-			return fmt.Errorf("record reverted %q/%q: %w", namespace, m.Name, err)
+		if err := app.markReverted(namespace, m.MigrationName); err != nil {
+			return fmt.Errorf("record reverted %q/%q: %w", namespace, m.MigrationName, err)
 		}
 	}
 	return nil
@@ -261,9 +262,9 @@ func (app *App) RunMigrationsDownTo(namespace, target string) error {
 
 // indexOfMigration returns the index of the migration named name within
 // ordered, or -1 if not present.
-func indexOfMigration(ordered []*migration.Migration, name string) int {
+func indexOfMigration(ordered []*migration.Migration, migrationName string) int {
 	for i, m := range ordered {
-		if m.Name == name {
+		if m.MigrationName == migrationName {
 			return i
 		}
 	}
@@ -326,7 +327,7 @@ func (app *App) migrateNamespaceUpToLatest(namespace string) error {
 	if len(ordered) == 0 {
 		return nil
 	}
-	latest := ordered[len(ordered)-1].Name
+	latest := ordered[len(ordered)-1].MigrationName
 	return app.RunMigrationsUpTo(namespace, latest)
 }
 
@@ -526,15 +527,15 @@ func (app *App) namespaceMigrationState(namespace string) (*NamespaceMigrationSt
 	}
 
 	for _, m := range ordered {
-		appliedAt := isApplied(m.Name)
+		appliedAt := isApplied(m.MigrationName)
 		status := MigrationStatus{
 			Namespace: namespace,
-			Name:      m.Name,
+			Name:      m.MigrationName,
 			Applied:   appliedAt != nil,
 		}
 		if appliedAt != nil {
 			status.AppliedAt = appliedAt
-			state.Current = m.Name // ordered ascending, so the last match wins
+			state.Current = m.MigrationName // ordered ascending, so the last match wins
 		} else {
 			state.Pending++
 		}

@@ -4,22 +4,23 @@ import (
 	"testing"
 
 	"github.com/go-hypercube/go-hypercube/migration"
+	"github.com/go-hypercube/go-hypercube/namespaced"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNamespacedSlice_GetNamespace(t *testing.T) {
-	slice := migration.NamespacedSlice{
-		{Namespace: "auth", Migration: &migration.Migration{Name: "b"}},
-		{Namespace: "auth", Migration: &migration.Migration{Name: "a"}},
-		{Namespace: "billing", Migration: &migration.Migration{Name: "x"}},
+	slice := namespaced.NamespacedSlice[*migration.Migration]{
+		{Namespace: "auth", Item: &migration.Migration{MigrationName: "b"}},
+		{Namespace: "auth", Item: &migration.Migration{MigrationName: "a"}},
+		{Namespace: "billing", Item: &migration.Migration{MigrationName: "x"}},
 	}
 
 	t.Run("existing namespace", func(t *testing.T) {
 		got := slice.GetNamespace("auth")
 		require.Len(t, got, 2)
-		assert.Equal(t, "a", got[0].Name)
-		assert.Equal(t, "b", got[1].Name)
+		assert.Equal(t, "a", got[0].MigrationName)
+		assert.Equal(t, "b", got[1].MigrationName)
 	})
 
 	t.Run("non-existing namespace", func(t *testing.T) {
@@ -29,10 +30,10 @@ func TestNamespacedSlice_GetNamespace(t *testing.T) {
 }
 
 func TestNamespacedSlice_GroupByNamespace(t *testing.T) {
-	slice := migration.NamespacedSlice{
-		{Namespace: "auth", Migration: &migration.Migration{Name: "z"}},
-		{Namespace: "auth", Migration: &migration.Migration{Name: "a"}},
-		{Namespace: "billing", Migration: &migration.Migration{Name: "m"}},
+	slice := namespaced.NamespacedSlice[*migration.Migration]{
+		{Namespace: "auth", Item: &migration.Migration{MigrationName: "z"}},
+		{Namespace: "auth", Item: &migration.Migration{MigrationName: "a"}},
+		{Namespace: "billing", Item: &migration.Migration{MigrationName: "m"}},
 	}
 
 	groups := slice.GroupByNamespace()
@@ -40,31 +41,31 @@ func TestNamespacedSlice_GroupByNamespace(t *testing.T) {
 	require.Contains(t, groups, "auth")
 	require.Contains(t, groups, "billing")
 	assert.Len(t, groups["auth"], 2)
-	assert.Equal(t, "a", groups["auth"][0].Name)
-	assert.Equal(t, "z", groups["auth"][1].Name)
+	assert.Equal(t, "a", groups["auth"][0].MigrationName)
+	assert.Equal(t, "z", groups["auth"][1].MigrationName)
 	assert.Len(t, groups["billing"], 1)
-	assert.Equal(t, "m", groups["billing"][0].Name)
+	assert.Equal(t, "m", groups["billing"][0].MigrationName)
 }
 
 func TestNamespacedSlice_Sort(t *testing.T) {
-	slice := migration.NamespacedSlice{
-		{Namespace: "b", Migration: &migration.Migration{Name: "b"}},
-		{Namespace: "a", Migration: &migration.Migration{Name: "z"}},
-		{Namespace: "a", Migration: &migration.Migration{Name: "a"}},
+	slice := namespaced.NamespacedSlice[*migration.Migration]{
+		{Namespace: "b", Item: &migration.Migration{MigrationName: "b"}},
+		{Namespace: "a", Item: &migration.Migration{MigrationName: "z"}},
+		{Namespace: "a", Item: &migration.Migration{MigrationName: "a"}},
 	}
 
 	slice.Sort()
 
-	expected := migration.NamespacedSlice{
-		{Namespace: "a", Migration: &migration.Migration{Name: "a"}},
-		{Namespace: "a", Migration: &migration.Migration{Name: "z"}},
-		{Namespace: "b", Migration: &migration.Migration{Name: "b"}},
+	expected := namespaced.NamespacedSlice[*migration.Migration]{
+		{Namespace: "a", Item: &migration.Migration{MigrationName: "a"}},
+		{Namespace: "a", Item: &migration.Migration{MigrationName: "z"}},
+		{Namespace: "b", Item: &migration.Migration{MigrationName: "b"}},
 	}
 	assert.Equal(t, expected, slice)
 }
 
 func TestNamespacedSlice_Namespaces(t *testing.T) {
-	slice := migration.NamespacedSlice{
+	slice := namespaced.NamespacedSlice[*migration.Migration]{
 		{Namespace: "billing"},
 		{Namespace: "auth"},
 		{Namespace: "auth"},
@@ -77,9 +78,9 @@ func TestNamespacedSlice_Namespaces(t *testing.T) {
 }
 
 func TestNamespacedSlice_Contains(t *testing.T) {
-	slice := migration.NamespacedSlice{
-		{Namespace: "auth", Migration: &migration.Migration{Name: "init"}},
-		{Namespace: "billing", Migration: &migration.Migration{Name: "create_invoices"}},
+	slice := namespaced.NamespacedSlice[*migration.Migration]{
+		{Namespace: "auth", Item: &migration.Migration{MigrationName: "init"}},
+		{Namespace: "billing", Item: &migration.Migration{MigrationName: "create_invoices"}},
 	}
 
 	t.Run("found", func(t *testing.T) {
@@ -95,11 +96,11 @@ func TestNamespacedSlice_Contains(t *testing.T) {
 }
 
 func TestNamespacedSlice_GetNamespaces(t *testing.T) {
-	slice := migration.NamespacedSlice{
-		{Namespace: "auth", Migration: &migration.Migration{Name: "b"}},
-		{Namespace: "auth", Migration: &migration.Migration{Name: "a"}},
-		{Namespace: "billing", Migration: &migration.Migration{Name: "x"}},
-		{Namespace: "admin", Migration: &migration.Migration{Name: "init"}},
+	slice := namespaced.NamespacedSlice[*migration.Migration]{
+		{Namespace: "auth", Item: &migration.Migration{MigrationName: "b"}},
+		{Namespace: "auth", Item: &migration.Migration{MigrationName: "a"}},
+		{Namespace: "billing", Item: &migration.Migration{MigrationName: "x"}},
+		{Namespace: "admin", Item: &migration.Migration{MigrationName: "init"}},
 	}
 
 	t.Run("multiple namespaces", func(t *testing.T) {
@@ -107,20 +108,20 @@ func TestNamespacedSlice_GetNamespaces(t *testing.T) {
 		require.Len(t, got, 3)
 		// Should be sorted: first auth (a, b), then billing (x)
 		assert.Equal(t, "auth", got[0].Namespace)
-		assert.Equal(t, "a", got[0].Name)
+		assert.Equal(t, "a", got[0].Item.Name())
 		assert.Equal(t, "auth", got[1].Namespace)
-		assert.Equal(t, "b", got[1].Name)
+		assert.Equal(t, "b", got[1].Item.Name())
 		assert.Equal(t, "billing", got[2].Namespace)
-		assert.Equal(t, "x", got[2].Name)
+		assert.Equal(t, "x", got[2].Item.Name())
 	})
 
 	t.Run("single namespace", func(t *testing.T) {
 		got := slice.GetNamespaces("auth")
 		require.Len(t, got, 2)
 		assert.Equal(t, "auth", got[0].Namespace)
-		assert.Equal(t, "a", got[0].Name)
+		assert.Equal(t, "a", got[0].Item.Name())
 		assert.Equal(t, "auth", got[1].Namespace)
-		assert.Equal(t, "b", got[1].Name)
+		assert.Equal(t, "b", got[1].Item.Name())
 	})
 
 	t.Run("no arguments", func(t *testing.T) {
