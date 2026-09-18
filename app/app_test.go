@@ -7,6 +7,7 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/plugin"
+	memoryqueue  "github.com/go-hypercube/hypercube-queue-memory"
 	memorycache "github.com/go-hypercube/hypercube-cache-memory"
 	"github.com/stretchr/testify/require"
 )
@@ -43,6 +44,7 @@ func newMockApp(t *testing.T, driverName string) (*App, sqlmock.Sqlmock) {
 			Logger:   slog.Default(),
 			Database: db,
 			Cache:    memorycache.New(),
+			Queue:    memoryqueue.New(),
 		})
 	require.NoError(t, err)
 	return app, mock

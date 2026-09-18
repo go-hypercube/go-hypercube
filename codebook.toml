@@ -1,8 +1,11 @@
 words = [
+    "Acked",
+    "Redrive",
     "Sqlmock",
     "gofumpt",
     "golangci",
     "memorycache",
+    "memoryqueue",
     "statementbegin",
     "statementend",
 ]
