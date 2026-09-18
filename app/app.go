@@ -10,9 +10,11 @@ import (
 	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/config"
 	"github.com/go-hypercube/go-hypercube/internal/container"
+	"github.com/go-hypercube/go-hypercube/job"
 	"github.com/go-hypercube/go-hypercube/migration"
 	"github.com/go-hypercube/go-hypercube/namespaced"
 	"github.com/go-hypercube/go-hypercube/plugin"
+	"github.com/go-hypercube/go-hypercube/queue"
 	"github.com/go-hypercube/go-hypercube/seeder"
 )
 
@@ -24,6 +26,8 @@ type App struct {
 	migrations namespaced.NamespacedSlice[*migration.Migration]
 	seeders    namespaced.NamespacedSlice[seeder.Seeder]
 	cmds       namespaced.NamespacedSlice[cmd.Command]
+	jobs       namespaced.NamespacedSlice[job.Job]
+	queue      queue.Queue
 	services   *container.ServiceContainer
 	logger     *slog.Logger
 	didSetup   bool
@@ -39,6 +43,7 @@ func New(op *Options) (*App, error) {
 		database: op.Database,
 		cache:    op.Cache,
 		logger:   op.Logger,
+		queue:    op.Queue,
 		services: container.NewServiceContainer(),
 	}, nil
 }
@@ -121,6 +126,7 @@ func (app *App) Boot() error {
 }
 
 type Options struct {
+	Queue    queue.Queue
 	Config   config.Config
 	Database *sql.DB
 	Cache    cache.Cache
@@ -128,6 +134,9 @@ type Options struct {
 }
 
 func (o Options) validate() error {
+	if o.Queue == nil {
+		return errors.New("queue is required")
+	}
 	if o.Config == nil {
 		return errors.New("config is required")
 	}
