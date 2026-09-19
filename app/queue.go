@@ -53,14 +53,24 @@ func (app *App) registerJobForNamespace(namespace string, jobs ...job.Job) error
 	return nil
 }
 
-// Dispatch enqueues jobName for immediate processing.
-func (app *App) Dispatch(jobName string, payload []byte) error {
-	return app.dispatch(hostAppNamespace, jobName, payload, 0)
+type DispatchConfig struct {
+	Delay time.Duration
+
+	// VisibilityTimeout overrides the visibility timeout for this
+	// single message (see queue.Message). Non-zero wins the
+	// job's own declaration (VisibilityTimeoutFor); zero falls back
+	// to it, and finally to the driver default.
+	//
+	// Use this only when single dispatch genuinely needs a
+	// different window than the job's normal one.
+	// Prefer implementing the job-level Visibility interface
+	// so every dispatch site consistent.
+	VisibilityTimeout time.Duration
 }
 
-// DispatchIn enqueues jobName for processing after delay.
-func (app *App) DispatchIn(jobName string, payload []byte, delay time.Duration) error {
-	return app.dispatch(hostAppNamespace, jobName, payload, delay)
+// Dispatch enqueues jobName for immediate processing.
+func (app *App) Dispatch(jobName string, payload []byte, config DispatchConfig) error {
+	return app.dispatch(hostAppNamespace, jobName, payload, config)
 }
 
 // dispatch looks up the registered job to resolve its declared queue
@@ -68,18 +78,25 @@ func (app *App) DispatchIn(jobName string, payload []byte, delay time.Duration) 
 // missing before: Push now always knows exactly which queue a message
 // belongs to, driven by the job's own registration rather than a value
 // the caller has to separately remember and pass in.
-func (app *App) dispatch(namespace, jobName string, payload []byte, delay time.Duration) error {
+func (app *App) dispatch(namespace, jobName string, payload []byte, config DispatchConfig) error {
 	j, ok := app.jobs.Get(namespace, jobName)
 	if !ok {
 		return fmt.Errorf("job %q not found in namespace %q", jobName, namespace)
 	}
+
+	visibilityTimeout := config.VisibilityTimeout
+	if visibilityTimeout == 0 {
+		visibilityTimeout = job.VisibilityTimeoutFor(j)
+	}
+
 	return app.queue.Push(context.Background(), &queue.Message{
-		ID:        uuid.NewString(),
-		QueueName: job.QueueNameFor(j),
-		Namespace: namespace,
-		JobName:   jobName,
-		Payload:   payload,
-	}, delay)
+		ID:                uuid.NewString(),
+		QueueName:         job.QueueNameFor(j),
+		VisibilityTimeout: visibilityTimeout,
+		Namespace:         namespace,
+		JobName:           jobName,
+		Payload:           payload,
+	}, config.Delay)
 }
 
 // Worker starts op.Concurrency goroutines processing messages from
@@ -124,7 +141,7 @@ func (app *App) Worker(ctx context.Context, op WorkerOptions) error {
 }
 
 // processMessage looks up the job by (msg.Namespace, msg.JobName)
-// runs it, and Acks, retries, or dead-letters based on the result 
+// runs it, and Acks, retries, or dead-letters based on the result
 // and the job's RetryPolicy.
 func (app *App) processMessage(ctx context.Context, msg *queue.Message) {
 	j, ok := app.jobs.Get(msg.Namespace, msg.JobName)

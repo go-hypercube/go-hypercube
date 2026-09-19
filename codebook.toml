@@ -1,4 +1,5 @@
 words = [
+    "Acked",
     "Sqlmock",
     "gofumpt",
     "golangci",

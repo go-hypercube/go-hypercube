@@ -8,107 +8,192 @@ import (
 	"time"
 )
 
-// Message is a single unit of work moving through a Queue. Namespace
-// distinguishes plugin-owned jobs from host-app-owned ones.
-type Message struct {
-	ID        string
-	QueueName string
-	Namespace string
-	JobName   string
-	Payload   []byte
-	Attempt   int // 1-indexed; incremented by the driver on each Pop/redelivery
-}
-
-// Queue is the minimal, backend-agnostic contract a job/message queue
-// must support.
+// Queue is the storage contract for a job queue driver.
 //
-// Implementations must be safe for concurrent use: Pop, Ack, and Fail
-// may be called concurrently by multiple goroutines, including against
-// the same queue name or the same message id, without data races or
-// corrupting internal state.
+// # Responsibilities
 //
-// State transitions for a single message, and the error each operation
-// returns per state, are as follows:
+// A Queue implementation is a DUMB EXECUTOR. It stores messages,
+// delivers them, and performs exactly the state transition it is told
+// to perform. It holds NO opinions about retry policy, attempt
+// limits, or when a message is "permanently failed" — all decisions
+// belong to the caller (the app/manager layer), which knows each
+// job's individual retry policy.
 //
-//	State           | Ack              | Fail (attempts left) 	   | Fail (last attempt)
-//	----------------|------------------|---------------------------|---------------------
-//	popped/visible  | -> Acked, ok     | -> pending, attempt++, ok | -> dead-lettered, ok
-//	delayed         | ErrNotFound      | ErrNotFound               | ErrNotFound
-//	acked           | ErrAlreadyAcked  | ErrNotFound               | ErrNotFound
-//	dead-lettered   | ErrNotFound      | ErrAlreadyFailed          | ErrAlreadyFailed
-//	never existed   | ErrNotFound      | ErrNotFound               | ErrNotFound
+// # Message life-cycle / state transitions
+//
+//	Push              -> pending
+//	Pop               -> pending -> in-flight   (Attempt incremented)
+//	Ack               -> in-flight -> done      (removed; terminal)
+//	Retry 			  -> in-flight -> pending   (re-added)
+//	DeadLetter		  -> in-flight -> failed   	(removed; terminal)
+//
+// There is no conditional transition and no "last attempt" — the
+// driver never decides that a message is exhausted. If the caller
+// wants a message gone, it calls Ack or DeadLetter.
+//
+// # Delivery semantics
+//
+// Delivery is AT-LEAST-ONCE. A driver MAY redeliver a message that is
+// still in-flight (e.g. after a visibility timeout or worker crash).
+// Handlers MUST therefore be idempotent.
+//
+// ## Delivery guarantees: at-least-once
+//
+// The queue guarantees a message is delivered **at least once** — never
+// zero times, but possibly more than once.
+//
+// ### Why duplicates happen
+//
+// A worker crashes (or loses connection) *after* doing the work but
+// *before* sending the ack:
+//
+//	Worker                          Queue
+//	  │ pop ✓                        │
+//	  │ ... runs the job ...         │
+//	  │            ✗ CRASH           │  ← ack never sent
+//	                                 │ message still "in-flight"
+//	                                 │ → redelivered to another worker
+//
+// The queue cannot tell "job finished" from "worker died", so it must
+// redeliver. Result: the job may run twice.
+//
+// ### Rule for handler authors
+//
+// Handlers MUST be idempotent: running twice must have the same effect
+// as running once.
+//
+// # Concurrency
+//
+// Implementations MUST be safe for concurrent use by multiple
+// goroutines.
 type Queue interface {
-	// Push enqueues m for delivery on m.QueueName. If delay > 0, the
-	// message only becomes visible to Pop after delay elapses.
-	Push(ctx context.Context, m *Message, delay time.Duration) error
-
-	// Pop returns the next available message on queueName, or ErrEmpty
-	// if none is currently available. The message is invisible to other
-	// Pop calls until Ack, Fail, or a driver-defined visibility timeout
-	// elapses. Implementations must increment the returned message's
-	// Attempt on every delivery.
+	// Push enqueues msg. The driver MUST assign msg.ID if it is not
+	// already set. If delay > 0, the message becomes eligible for
+	// delivery only after the delay has elapsed.
 	//
-	// Pop must be safe to call concurrently: two goroutines calling Pop
-	// on the same queueName at the same time must never both receive the
-	// same message.
+	// Push does not validate queue names, namespaces, or jobs — the
+	// caller is responsible for that.
+	Push(ctx context.Context, msg *Message, delay time.Duration) error
+
+	// Pop removes and returns the next available message from the
+	// named queue, moving it to in-flight.
+	//
+	// The driver MUST increment msg.Attempt before returning it.
+	//
+	// If the queue is empty, Pop returns (nil, ErrEmpty) — an empty queue
+	// is not an error. Callers that want streaming semantics should
+	// implement PopStream instead of Pop.
 	Pop(ctx context.Context, queueName string) (*Message, error)
 
-	// Ack acknowledges successful processing of the message identified
-	// by id (as previously returned by Pop), removing it from the
-	// queue permanently. Acked is a terminal state.
+	// Ack permanently removes an in-flight message, marking it as
+	// successfully processed.
 	//
-	// Returns ErrNotFound if id is not a currently-actionable in-flight
-	// message (never existed, delayed, or already dead-lettered via
-	// Fail). Returns ErrAlreadyAcked if id has already been Acked.
+	// Ack is a command, not a decision: the caller decided the
+	// message succeeded.
+	//
+	// Errors:
+	//   - ErrNotFound: no in-flight message with this id.
 	Ack(ctx context.Context, id string) error
 
-	// Fail marks the message identified by id as failed. If the
-	// message's attempt count is below the driver's configured max
-	// attempts, it is made visible again for redelivery (attempt is
-	// incremented on the next Pop). If attempts are exhausted, the
-	// message is moved to a terminal dead-lettered state instead.
+	// Retry makes an in-flight message eligible for redelivery after
+	// the given delay. It never dead-letters and never enforces an
+	// attempt limit — retry policy belongs entirely to the caller,
+	// which reads msg.Attempt and applies its own per-job policy.
 	//
-	// Returns ErrNotFound if id is not a currently-actionable in-flight
-	// message (never existed, delayed, or already terminal via Ack).
-	// Returns ErrAlreadyFailed if id is already dead-lettered; a Fail
-	// call that instead triggers a normal retry is not an error.
-	Fail(ctx context.Context, id string, delay time.Duration) error
+	// Retry is a command, not a decision: the caller already decided
+	// this attempt failed and wants another one.
+	//
+	// Errors:
+	//   - ErrNotFound: no in-flight message with this id.
+	Retry(ctx context.Context, id string, delay time.Duration) error
 
-	// Len reports the number of pending (visible + delayed) messages on
-	// queueName.
-	Len(ctx context.Context, queueName string) (int64, error)
-
-	// Queues reports the currently available queues.
-	Queues(ctx context.Context) ([]string, error)
+	// DeadLetter permanently removes an in-flight message, marking it
+	// as permanently failed. The message MUST NOT be redelivered.
+	//
+	// Drivers with a native dead-letter facility (e.g. an SQS DLQ, a
+	// Redis "dead" list, a failed-messages table) SHOULD park the
+	// message there for inspection; drivers without one simply
+	// discard it. Either way, the framework-level record of the
+	// failure (cause, payload, attempt count) is kept by the caller.
+	//
+	// DeadLetter is a command, not a decision: the caller — not the
+	// driver — determined that the message is permanently failed.
+	// Drivers MUST NOT dead-letter messages on their own: no internal
+	// attempt limits, no TTL-based expiry into a failed state, no
+	// automatic discarding of repeated failures.
+	//
+	// Errors:
+	//   - ErrNotFound: no in-flight message with this id.
+	DeadLetter(ctx context.Context, id string) error
 }
 
-// Result is what a PopStream delivers on its channel: either a message
-// ready to process, or an error encountered while trying to produce
-// one. Exactly one of Msg/Err is non-nil — never both, never neither.
+// Message is a unit of work traveling through a queue.
+type Message struct {
+	// ID is a unique identifier for this message, assigned by Push
+	// if not already set.
+	ID string
+
+	// QueueName is the queue this message belongs to.
+	QueueName string
+
+	// Namespace and JobName identify which registered job this
+	// message is for. The queue driver treats them as opaque.
+	Namespace string
+	JobName   string
+
+	// Payload is the opaque job payload.
+	Payload []byte
+
+	// Attempt is the number of times this message has been popped
+	// for delivery. The first delivery has Attempt == 1.
+	//
+	// Ownership: the DRIVER owns this counter — it MUST increment
+	// Attempt on every Pop. The CALLER (the app/manager layer) owns
+	// the DECISION of what to do with the count (retry policy,
+	// max-attempts limit, dead-lettering). Drivers MUST NOT enforce
+	// any attempt limit of their own.
+	Attempt int
+
+	// VisibilityTimeout is how long this message stays invisible to
+	// other workers after being popped. If the worker has not Acked,
+	// Retried, or DeadLettered the message within this window, the
+	// driver MAY make it visible again (redelivery — see the
+	// at-least-once guarantee).
+	//
+	// Ownership: the CALLER sets this per message or based on the
+	// job's configured max runtime. If zero, the driver applies its
+	// own default.
+	//
+	// Drivers that cannot honor a per-message timeout (e.g. SQS
+	// per-message visibility is supported, but some backends only
+	// have a per-queue setting) MUST document their behavior.
+	VisibilityTimeout time.Duration
+}
+
+// PopStream is an OPTIONAL interface. A Queue driver that can deliver
+// messages as a stream (long-poll, subscription, etc.) implements it
+// to avoid polling overhead.
+//
+// If a driver does not implement PopStream, the framework wraps it
+// with PollAsStream, which repeatedly calls Pop and forwards results
+// over a channel. Workers therefore go through a single code path
+// either way.
+type PopStream interface {
+	// PopChan returns a channel delivering messages from the named
+	// queue until ctx is cancelled, at which point the channel MUST
+	// be closed.
+	//
+	// The driver MUST increment msg.Attempt on each delivered
+	// message, as with Pop. Delivery is at-least-once.
+	//
+	// The driver owns the channel and MUST tolerate the caller
+	// abandoning it after ctx cancellation.
+	PopChan(ctx context.Context, queueName string) (<-chan *Result, error)
+}
+
+// Result pairs a delivered message with a delivery error. Exactly one
+// of Msg / Err is non-nil.
 type Result struct {
 	Msg *Message
 	Err error
-}
-
-// PopStream is implemented by drivers that can deliver messages as a
-// channel instead of discrete Pop calls. See Queue's doc for why this
-// is optional rather than part of Queue itself.
-type PopStream interface {
-	// PopChan returns a channel of incoming results for queueName.
-	// Multiple goroutines may range over the same returned channel
-	// concurrently — the driver is responsible for distributing
-	// messages across them, not the caller.
-	//
-	// A Result with Err set reports a delivery problem (e.g. a
-	// persistent Pop failure on the underlying queue) without ending
-	// the stream — the driver keeps trying and may still deliver
-	// messages afterward. Callers should log/handle Err results but
-	// keep ranging over the channel. The channel is closed only once
-	// ctx is cancelled/expires; that is the sole "stream has ended"
-	// signal — a closed channel is never itself an error to check for.
-	//
-	// The returned error is only for setup failure (e.g. a driver that
-	// needs to open a subscription before it can stream). A driver with
-	// no setup step should simply return nil here.
-	PopChan(ctx context.Context, queueName string) (<-chan *Result, error)
 }

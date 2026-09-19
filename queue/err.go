@@ -8,30 +8,12 @@ import "errors"
 // error.
 var ErrEmpty = errors.New("queue: no message available")
 
-// ErrNotFound is returned by Ack and Fail when id does not refer to a
-// currently-actionable in-flight message. This covers three distinct
-// situations under one error:
-//   - id never existed on this queue,
-//   - id exists but is currently delayed / not yet visible,
-//   - id already reached a terminal state via the *other* operation
-//     (e.g. Ack is called on an id that was already Failed to
-//     dead-letter, or Fail is called on an id that was already Acked).
+// ErrNotFound is returned by Ack, Retry, and DeadLetter when no
+// in-flight message matches the given id. This can happen when the
+// message was already acked, retried, or dead-lettered, or after a
+// worker crash/restart that left stale state behind.
 //
-// This is intentional, not a placeholder: callers needing to
-// distinguish these cases must track message state themselves — the
-// queue driver does not expose it.
-var ErrNotFound = errors.New("queue: message not found or not actionable")
-
-// ErrAlreadyAcked is returned by Ack when id has already been
-// successfully Acked. It is only returned for a repeated Ack on an
-// already-Acked id — Ack on an id that reached a terminal state via
-// Fail instead returns ErrNotFound (see ErrNotFound).
-var ErrAlreadyAcked = errors.New("queue: message already acked")
-
-// ErrAlreadyFailed is returned by Fail when id has already been marked
-// permanently failed (dead-lettered, i.e. its retry attempts are
-// exhausted). It is not returned for a Fail that still has retry
-// attempts remaining — that call succeeds normally and requeues the
-// message. Fail on an id that reached a terminal state via Ack instead
-// returns ErrNotFound (see ErrNotFound).
-var ErrAlreadyFailed = errors.New("queue: message already failed (dead-lettered)")
+// This is the ONLY sentinel error in the package. Drivers MUST return
+// it (directly or via errors.Is) for missing messages, so callers can
+// distinguish "message already handled" from infrastructure failure.
+var ErrNotFound = errors.New("queue: message not found")
