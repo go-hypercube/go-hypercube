@@ -93,7 +93,7 @@ type Queue interface {
 	//
 	// Errors:
 	//   - ErrNotFound: no in-flight message with this id.
-	Ack(ctx context.Context, id string) error
+	Ack(ctx context.Context, msg *Message) error
 
 	// Retry makes an in-flight message eligible for redelivery after
 	// the given delay. It never dead-letters and never enforces an
@@ -105,7 +105,7 @@ type Queue interface {
 	//
 	// Errors:
 	//   - ErrNotFound: no in-flight message with this id.
-	Retry(ctx context.Context, id string, delay time.Duration) error
+	Retry(ctx context.Context, msg *Message, delay time.Duration) error
 
 	// DeadLetter permanently removes an in-flight message, marking it
 	// as permanently failed. The message MUST NOT be redelivered.
@@ -116,6 +116,9 @@ type Queue interface {
 	// discard it. Either way, the framework-level record of the
 	// failure (cause, payload, attempt count) is kept by the caller.
 	//
+	// Drivers without a dead-letter store discard it; such drivers
+	// report Dead == 0 in QueueStats.
+	//
 	// DeadLetter is a command, not a decision: the caller — not the
 	// driver — determined that the message is permanently failed.
 	// Drivers MUST NOT dead-letter messages on their own: no internal
@@ -124,7 +127,7 @@ type Queue interface {
 	//
 	// Errors:
 	//   - ErrNotFound: no in-flight message with this id.
-	DeadLetter(ctx context.Context, id string) error
+	DeadLetter(ctx context.Context, msg *Message) error
 }
 
 // Message is a unit of work traveling through a queue.
@@ -196,4 +199,57 @@ type PopStream interface {
 type Result struct {
 	Msg *Message
 	Err error
+}
+
+// QueueStats is a point-in-time snapshot of a single queue's state —
+// the queue named in Name. All values are APPROXIMATE: they reflect
+// what the driver could observe at snapshot time and MAY be stale
+// the moment they are returned (concurrent workers, replication lag,
+// eventual consistency).
+//
+// Callers MUST NOT use QueueStats for correctness decisions (e.g.
+// "if Pending == 0, the job is done") — only for observability,
+// alerting, and coarse back-pressure heuristics.
+type QueueStats struct {
+	// Name is the name of the queue this snapshot describes. All
+	// counts below are scoped to THIS queue only — they never
+	// aggregate across queues.
+	Name string
+
+	// Pending is the approximate number of messages in THIS queue
+	// waiting for delivery, including delayed messages not yet
+	// eligible for pickup.
+	Pending int64
+
+	// InFlight is the approximate number from
+	// THIS queue that are not yet Acked, Retried, or
+	// DeadLettered. Messages are counted here from the moment of
+	// Pop until one of those terminal operations — including the
+	// window after a visibility timeout has expired but before
+	// redelivery actually happens, so InFlight and Pending MAY
+	// both count the same message briefly during handoff.
+	InFlight int64
+
+	// Dead is the approximate number of dead-lettered messages
+	// belonging to THIS queue, if the driver keeps them (see
+	// Queue.DeadLetter). Drivers that discard dead-lettered
+	// messages report 0.
+	Dead int64
+}
+
+// StatsProvider is an OPTIONAL interface. A Queue driver that can
+// cheaply report queue state implements it; the framework treats it
+// as unavailable otherwise.
+type StatsProvider interface {
+	// Queues returns the names of all queues that currently hold
+	// at least one message. Empty queues MAY be omitted — absence
+	// from this list does not mean the queue "doesn't exist".
+	Queues(ctx context.Context) ([]string, error)
+
+	// Stats returns a snapshot for the named queue.
+	//
+	// Errors:
+	//   - unknown or empty queue: drivers SHOULD return
+	//     nil, not an error.
+	Stats(ctx context.Context, queueName string) (*QueueStats, error)
 }
