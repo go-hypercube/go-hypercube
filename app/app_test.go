@@ -7,8 +7,8 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/plugin"
-	memoryqueue  "github.com/go-hypercube/hypercube-queue-memory"
 	memorycache "github.com/go-hypercube/hypercube-cache-memory"
+	memoryqueue "github.com/go-hypercube/hypercube-queue-memory"
 	"github.com/stretchr/testify/require"
 )
 

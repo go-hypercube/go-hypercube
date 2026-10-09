@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"github.com/go-hypercube/go-hypercube/cmd"
+	"github.com/go-hypercube/go-hypercube/job"
 	"github.com/go-hypercube/go-hypercube/migration"
 	"github.com/go-hypercube/go-hypercube/seeder"
 )
@@ -38,6 +39,7 @@ type Registration struct {
 	Migrations []*migration.Migration
 	Cmds       []cmd.Command
 	Seeders    []seeder.Seeder
+	Jobs       []job.Job
 }
 
 // DependencyDesc names a plugin dependency and the minimum version of

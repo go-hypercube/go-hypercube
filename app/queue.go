@@ -49,22 +49,15 @@ func (app *App) registerJobForNamespace(namespace string, jobs ...job.Job) error
 	return nil
 }
 
-type DispatchConfig struct {
-	// Delay is the initial delay before the message becomes visible.
-	Delay time.Duration
-
-	// VisibilityTimeout overrides the visibility timeout for this single message.
-	// Non-zero wins over the job's VisibilityTimeout declaration; zero falls back
-	// to the job declaration and finally to the driver default.
-	VisibilityTimeout time.Duration
-}
+// DispatchConfig configures a single job dispatch.
+type DispatchConfig = job.DispatchConfig
 
 // Dispatch enqueues jobName for processing in the framework namespace.
-func (app *App) Dispatch(jobName string, payload []byte, config DispatchConfig) error {
-	return app.dispatch(hostAppNamespace, jobName, payload, config)
+func (app *App) Dispatch(ctx context.Context, jobName string, payload []byte, config DispatchConfig) error {
+	return app.dispatch(ctx, hostAppNamespace, jobName, payload, config)
 }
 
-func (app *App) dispatch(namespace, jobName string, payload []byte, config DispatchConfig) error {
+func (app *App) dispatch(ctx context.Context, namespace, jobName string, payload []byte, config DispatchConfig) error {
 	j, ok := app.jobs.Get(namespace, jobName)
 	if !ok {
 		return fmt.Errorf("job %q not found in namespace %q", jobName, namespace)
@@ -83,7 +76,7 @@ func (app *App) dispatch(namespace, jobName string, payload []byte, config Dispa
 		Payload:           payload,
 		VisibilityTimeout: visibilityTimeout,
 	}
-	if err := app.queue.Push(context.Background(), msg); err != nil {
+	if err := app.queue.Push(ctx, msg); err != nil {
 		return fmt.Errorf("dispatch job %q in namespace %q: %w", jobName, namespace, err)
 	}
 	return nil
