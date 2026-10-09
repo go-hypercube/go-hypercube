@@ -22,6 +22,6 @@ Enable the pre-commit checks after cloning:
 git config core.hooksPath .githooks
 ```
 
-The hook runs `make lint`, `make fmt`, and `make test`, stopping on failure.
+The hook runs `make fmt`, then runs tests and lint in parallel, failing if either check fails.
 Formatting can change working files; review and stage those changes before committing.
 Skip the checks when needed with `git commit --no-verify`.
