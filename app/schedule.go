@@ -1,38 +1,41 @@
 package app
 
-import "github.com/go-co-op/gocron/v2"
+import (
+	"context"
+	"errors"
+	"fmt"
+)
 
-type Scheduler struct {
-	s   gocron.Scheduler
-	app *App
-}
+// ErrSchedulerUnavailable indicates that Options.Scheduler was not supplied.
+var ErrSchedulerUnavailable = errors.New("scheduler is unavailable: supply Options.Scheduler")
 
-func (app *App) NewScheduler() (*Scheduler, error) {
-	s, err := gocron.NewScheduler()
-	if err != nil {
-		return nil, err
+// Every schedules direct callback execution. The host starts the supplied
+// scheduler after Boot succeeds and shuts it down during teardown.
+func (app *App) Every(crontab string, task func(context.Context) error) error {
+	if app.scheduler == nil {
+		return ErrSchedulerUnavailable
 	}
-	return &Scheduler{s: s, app: app}, nil
+	return app.scheduler.Every(crontab, task)
 }
 
-// Every registers a recurring dispatch — gocron only decides when;
-// the actual job runs through the normal queue/worker/retry path, not
-// inside the scheduler's own goroutine.
-func (sc *Scheduler) Every(crontab, jobName string, payload []byte, config DispatchConfig) error {
-	return sc.every(crontab, hostAppNamespace, jobName, payload, config)
+// EveryDispatch schedules recurring enqueueing in the framework namespace.
+// Queue workers execute the job, including retries and dead-letter handling.
+func (app *App) EveryDispatch(crontab, jobName string, payload []byte, config DispatchConfig) error {
+	return app.everyDispatch(crontab, hostAppNamespace, jobName, payload, config)
 }
 
-func (sc *Scheduler) every(crontab, namespace, jobName string, payload []byte, config DispatchConfig) error {
-	_, err := sc.s.NewJob(
-		gocron.CronJob(crontab, false),
-		gocron.NewTask(func() {
-			if err := sc.app.dispatch(namespace, jobName, payload, config); err != nil {
-				sc.app.logger.Error("scheduled dispatch failed", "namespace", namespace, "job", jobName, "err", err)
-			}
-		}),
-	)
-	return err
+func (app *App) everyDispatch(crontab, namespace, jobName string, payload []byte, config DispatchConfig) error {
+	if app.scheduler == nil {
+		return ErrSchedulerUnavailable
+	}
+	err := app.scheduler.Every(crontab, func(ctx context.Context) error {
+		if err := app.dispatch(ctx, namespace, jobName, payload, config); err != nil {
+			app.logger.Error("scheduled dispatch failed", "namespace", namespace, "job", jobName, "err", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("schedule job %q in namespace %q: %w", jobName, namespace, err)
+	}
+	return nil
 }
-
-func (sc *Scheduler) Start()          { sc.s.Start() }
-func (sc *Scheduler) Shutdown() error { return sc.s.Shutdown() }
