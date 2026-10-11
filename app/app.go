@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -15,23 +16,31 @@ import (
 	"github.com/go-hypercube/go-hypercube/namespaced"
 	"github.com/go-hypercube/go-hypercube/plugin"
 	"github.com/go-hypercube/go-hypercube/queue"
+	"github.com/go-hypercube/go-hypercube/scheduler"
 	"github.com/go-hypercube/go-hypercube/seeder"
 )
 
 type App struct {
-	config     config.Config
-	database   *sql.DB
-	cache      cache.Cache
-	plugins    []plugin.Plugin
+	config config.Config
+
+	database *sql.DB
+	cache    cache.Cache
+
+	plugins []plugin.Plugin
+
 	migrations namespaced.NamespacedSlice[*migration.Migration]
 	seeders    namespaced.NamespacedSlice[seeder.Seeder]
 	cmds       namespaced.NamespacedSlice[cmd.Command]
 	jobs       namespaced.NamespacedSlice[job.Job]
-	queue      queue.Queue
-	services   *container.ServiceContainer
-	logger     *slog.Logger
-	didSetup   bool
-	didBoot    bool
+
+	queue    queue.Queue
+	services *container.ServiceContainer
+	logger   *slog.Logger
+
+	didSetup bool
+	didBoot  bool
+
+	scheduler *scheduler.Scheduler
 }
 
 func New(op *Options) (*App, error) {
@@ -39,12 +48,13 @@ func New(op *Options) (*App, error) {
 		return nil, err
 	}
 	return &App{
-		config:   op.Config,
-		database: op.Database,
-		cache:    op.Cache,
-		logger:   op.Logger,
-		queue:    op.Queue,
-		services: container.NewServiceContainer(),
+		config:    op.Config,
+		database:  op.Database,
+		cache:     op.Cache,
+		logger:    op.Logger,
+		queue:     op.Queue,
+		services:  container.NewServiceContainer(),
+		scheduler: op.Scheduler,
 	}, nil
 }
 
@@ -64,29 +74,41 @@ func (app *App) Setup() error {
 	}
 
 	for _, p := range app.plugins {
+		namespace := p.Name()
 		registration, err := p.Register(
 			plugin.NewAppForPlugin(
 				&plugin.Options{
 					Plugin:    p,
 					Database:  app.database,
 					Cache:     app.cache,
-					Logger:    app.logger.With("plugin", p.Name()),
+					Logger:    app.logger.With("plugin", namespace),
 					Container: app.services,
+					Dispatch: func(ctx context.Context, name string, payload []byte, config job.DispatchConfig) error {
+						return app.dispatch(ctx, namespace, name, payload, config)
+					},
+					Every: app.Every,
+					EveryDispatch: func(crontab, name string, payload []byte, config job.DispatchConfig) error {
+						return app.everyDispatch(crontab, namespace, name, payload, config)
+					},
 				},
 			),
 		)
 		if err != nil {
 			return err
 		}
-		err = app.registerMigrationForNamespace(p.Name(), registration.Migrations...)
+		err = app.registerMigrationForNamespace(namespace, registration.Migrations...)
 		if err != nil {
 			return err
 		}
-		err = app.registerCommandForNamespace(p.Name(), registration.Cmds...)
+		err = app.registerCommandForNamespace(namespace, registration.Cmds...)
 		if err != nil {
 			return err
 		}
-		err = app.registerSeederForNamespace(p.Name(), registration.Seeders...)
+		err = app.registerSeederForNamespace(namespace, registration.Seeders...)
+		if err != nil {
+			return err
+		}
+		err = app.registerJobForNamespace(namespace, registration.Jobs...)
 		if err != nil {
 			return err
 		}
@@ -105,6 +127,7 @@ func (app *App) Boot() error {
 	}
 
 	for _, p := range app.plugins {
+		namespace := p.Name()
 		err := p.Boot(
 			plugin.NewAppForPlugin(
 				&plugin.Options{
@@ -113,6 +136,13 @@ func (app *App) Boot() error {
 					Cache:     app.cache,
 					Logger:    app.logger.With("plugin", p.Name()),
 					Container: app.services,
+					Dispatch: func(ctx context.Context, name string, payload []byte, config job.DispatchConfig) error {
+						return app.dispatch(ctx, namespace, name, payload, config)
+					},
+					Every: app.Every,
+					EveryDispatch: func(crontab, name string, payload []byte, config job.DispatchConfig) error {
+						return app.everyDispatch(crontab, namespace, name, payload, config)
+					},
 				},
 			),
 		)
@@ -126,11 +156,13 @@ func (app *App) Boot() error {
 }
 
 type Options struct {
-	Queue    queue.Queue
-	Config   config.Config
-	Database *sql.DB
-	Cache    cache.Cache
-	Logger   *slog.Logger
+	// Scheduler is optional. Its owner controls Start and Shutdown.
+	Scheduler *scheduler.Scheduler
+	Queue     queue.Queue
+	Config    config.Config
+	Database  *sql.DB
+	Cache     cache.Cache
+	Logger    *slog.Logger
 }
 
 func (o Options) validate() error {
