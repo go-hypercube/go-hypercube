@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/go-co-op/gocron/v2"
 	"github.com/go-hypercube/go-hypercube/cache"
 	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/config"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-hypercube/go-hypercube/queue"
 	"github.com/go-hypercube/go-hypercube/scheduler"
 	"github.com/go-hypercube/go-hypercube/seeder"
+	"github.com/google/uuid"
 )
 
 type App struct {
@@ -33,14 +35,15 @@ type App struct {
 	cmds       namespaced.NamespacedSlice[cmd.Command]
 	jobs       namespaced.NamespacedSlice[job.Job]
 
-	queue    queue.Queue
+	queue     queue.Queue
+	scheduler *scheduler.Scheduler
+
 	services *container.ServiceContainer
-	logger   *slog.Logger
+
+	logger *slog.Logger
 
 	didSetup bool
 	didBoot  bool
-
-	scheduler *scheduler.Scheduler
 }
 
 func New(op *Options) (*App, error) {
@@ -86,9 +89,13 @@ func (app *App) Setup() error {
 					Dispatch: func(ctx context.Context, name string, payload []byte, config job.DispatchConfig) error {
 						return app.dispatch(ctx, namespace, name, payload, config)
 					},
-					Every: app.Every,
-					EveryDispatch: func(crontab, name string, payload []byte, config job.DispatchConfig) error {
-						return app.everyDispatch(crontab, namespace, name, payload, config)
+					Schedule: func(crontab string, task func(context.Context) error, config scheduler.JobConfig) error {
+						return app.schedule(crontab, namespace, task, config)
+					},
+					ScheduledJobs:      func() []gocron.Job { return app.scheduledJobs(namespace) },
+					RemoveScheduledJob: func(id uuid.UUID) error { return app.removeScheduledJob(namespace, id) },
+					ScheduleDispatch: func(crontab, name string, payload []byte, config job.DispatchConfig, schedule scheduler.JobConfig) error {
+						return app.scheduleDispatch(crontab, namespace, name, payload, config, schedule)
 					},
 				},
 			),
@@ -139,9 +146,13 @@ func (app *App) Boot() error {
 					Dispatch: func(ctx context.Context, name string, payload []byte, config job.DispatchConfig) error {
 						return app.dispatch(ctx, namespace, name, payload, config)
 					},
-					Every: app.Every,
-					EveryDispatch: func(crontab, name string, payload []byte, config job.DispatchConfig) error {
-						return app.everyDispatch(crontab, namespace, name, payload, config)
+					Schedule: func(crontab string, task func(context.Context) error, config scheduler.JobConfig) error {
+						return app.schedule(crontab, namespace, task, config)
+					},
+					ScheduledJobs:      func() []gocron.Job { return app.scheduledJobs(namespace) },
+					RemoveScheduledJob: func(id uuid.UUID) error { return app.removeScheduledJob(namespace, id) },
+					ScheduleDispatch: func(crontab, name string, payload []byte, config job.DispatchConfig, schedule scheduler.JobConfig) error {
+						return app.scheduleDispatch(crontab, namespace, name, payload, config, schedule)
 					},
 				},
 			),

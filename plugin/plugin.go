@@ -1,11 +1,16 @@
 package plugin
 
 import (
+	"errors"
+
 	"github.com/go-hypercube/go-hypercube/cmd"
 	"github.com/go-hypercube/go-hypercube/job"
 	"github.com/go-hypercube/go-hypercube/migration"
 	"github.com/go-hypercube/go-hypercube/seeder"
 )
+
+// ErrEmptyName indicates that a plugin has no namespace name.
+var ErrEmptyName = errors.New("plugin name must not be empty")
 
 type Plugin interface {
 	// Name returns the unique identifier for this plugin.

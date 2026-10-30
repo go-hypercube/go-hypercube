@@ -8,9 +8,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-co-op/gocron/v2"
+	"github.com/go-hypercube/go-hypercube/internal/reflectutil"
 	"github.com/go-hypercube/go-hypercube/job"
 	"github.com/go-hypercube/go-hypercube/namespaced"
 	"github.com/go-hypercube/go-hypercube/queue"
+	"github.com/go-hypercube/go-hypercube/scheduler"
+	"github.com/google/uuid"
 )
 
 const (
@@ -31,6 +35,15 @@ func (app *App) RegisterJob(jobs ...job.Job) error {
 // and adds it to app.jobs. A job is live behavior, so re-registering the same
 // (namespace, name) replaces the existing entry in place.
 func (app *App) registerJobForNamespace(namespace string, jobs ...job.Job) error {
+	// Validate the full batch before replacing or adding any registrations.
+	for _, j := range jobs {
+		if reflectutil.IsNil(j) {
+			return fmt.Errorf("register job in namespace %q: %w", namespace, job.ErrNilJob)
+		}
+		if j.Name() == "" {
+			return fmt.Errorf("register job in namespace %q: %w", namespace, job.ErrEmptyName)
+		}
+	}
 	for _, j := range jobs {
 		namespaced := job.NewNamespaced(namespace, j)
 
@@ -170,9 +183,19 @@ func (app *App) processMessage(ctx context.Context, msg *queue.Message) {
 		Job:       j,
 		Database:  app.database,
 		Cache:     app.cache,
-		Queue:     app.queue,
 		Logger:    app.logger.With("namespace", msg.Namespace, "job", msg.JobName, "attempt", msg.Attempt),
 		Container: app.services,
+		Dispatch: func(ctx context.Context, name string, payload []byte, config job.DispatchConfig) error {
+			return app.dispatch(ctx, msg.Namespace, name, payload, config)
+		},
+		Schedule: func(crontab string, task func(context.Context) error, config scheduler.JobConfig) error {
+			return app.schedule(crontab, msg.Namespace, task, config)
+		},
+		ScheduleDispatch: func(crontab, name string, payload []byte, config job.DispatchConfig, schedule scheduler.JobConfig) error {
+			return app.scheduleDispatch(crontab, msg.Namespace, name, payload, config, schedule)
+		},
+		ScheduledJobs:      func() []gocron.Job { return app.scheduledJobs(msg.Namespace) },
+		RemoveScheduledJob: func(id uuid.UUID) error { return app.removeScheduledJob(msg.Namespace, id) },
 	}), msg.Payload)
 
 	if runErr == nil {
