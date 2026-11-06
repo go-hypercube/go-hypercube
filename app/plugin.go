@@ -22,6 +22,9 @@ func (app *App) UsePlugin(plugins ...plugin.Plugin) error {
 
 	for _, newPlugin := range plugins {
 		name := newPlugin.Name()
+		if name == "" {
+			return plugin.ErrEmptyName
+		}
 		if name == hostAppNamespace {
 			return fmt.Errorf("cannot use %q as plugin name: reserved for framework internal use", name)
 		}

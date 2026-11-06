@@ -1,6 +1,0 @@
-#!/bin/sh
-set -e
-
-make fmt
-make test
-make lint

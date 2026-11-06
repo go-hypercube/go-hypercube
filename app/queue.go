@@ -8,9 +8,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-co-op/gocron/v2"
+	"github.com/go-hypercube/go-hypercube/internal/reflectutil"
 	"github.com/go-hypercube/go-hypercube/job"
 	"github.com/go-hypercube/go-hypercube/namespaced"
 	"github.com/go-hypercube/go-hypercube/queue"
+	"github.com/go-hypercube/go-hypercube/scheduler"
+	"github.com/google/uuid"
 )
 
 const (
@@ -31,6 +35,15 @@ func (app *App) RegisterJob(jobs ...job.Job) error {
 // and adds it to app.jobs. A job is live behavior, so re-registering the same
 // (namespace, name) replaces the existing entry in place.
 func (app *App) registerJobForNamespace(namespace string, jobs ...job.Job) error {
+	// Validate the full batch before replacing or adding any registrations.
+	for _, j := range jobs {
+		if reflectutil.IsNil(j) {
+			return fmt.Errorf("register job in namespace %q: %w", namespace, job.ErrNilJob)
+		}
+		if j.Name() == "" {
+			return fmt.Errorf("register job in namespace %q: %w", namespace, job.ErrEmptyName)
+		}
+	}
 	for _, j := range jobs {
 		namespaced := job.NewNamespaced(namespace, j)
 
@@ -49,22 +62,15 @@ func (app *App) registerJobForNamespace(namespace string, jobs ...job.Job) error
 	return nil
 }
 
-type DispatchConfig struct {
-	// Delay is the initial delay before the message becomes visible.
-	Delay time.Duration
-
-	// VisibilityTimeout overrides the visibility timeout for this single message.
-	// Non-zero wins over the job's VisibilityTimeout declaration; zero falls back
-	// to the job declaration and finally to the driver default.
-	VisibilityTimeout time.Duration
-}
+// DispatchConfig configures a single job dispatch.
+type DispatchConfig = job.DispatchConfig
 
 // Dispatch enqueues jobName for processing in the framework namespace.
-func (app *App) Dispatch(jobName string, payload []byte, config DispatchConfig) error {
-	return app.dispatch(hostAppNamespace, jobName, payload, config)
+func (app *App) Dispatch(ctx context.Context, jobName string, payload []byte, config DispatchConfig) error {
+	return app.dispatch(ctx, hostAppNamespace, jobName, payload, config)
 }
 
-func (app *App) dispatch(namespace, jobName string, payload []byte, config DispatchConfig) error {
+func (app *App) dispatch(ctx context.Context, namespace, jobName string, payload []byte, config DispatchConfig) error {
 	j, ok := app.jobs.Get(namespace, jobName)
 	if !ok {
 		return fmt.Errorf("job %q not found in namespace %q", jobName, namespace)
@@ -83,7 +89,7 @@ func (app *App) dispatch(namespace, jobName string, payload []byte, config Dispa
 		Payload:           payload,
 		VisibilityTimeout: visibilityTimeout,
 	}
-	if err := app.queue.Push(context.Background(), msg); err != nil {
+	if err := app.queue.Push(ctx, msg); err != nil {
 		return fmt.Errorf("dispatch job %q in namespace %q: %w", jobName, namespace, err)
 	}
 	return nil
@@ -177,9 +183,19 @@ func (app *App) processMessage(ctx context.Context, msg *queue.Message) {
 		Job:       j,
 		Database:  app.database,
 		Cache:     app.cache,
-		Queue:     app.queue,
 		Logger:    app.logger.With("namespace", msg.Namespace, "job", msg.JobName, "attempt", msg.Attempt),
 		Container: app.services,
+		Dispatch: func(ctx context.Context, name string, payload []byte, config job.DispatchConfig) error {
+			return app.dispatch(ctx, msg.Namespace, name, payload, config)
+		},
+		Schedule: func(crontab string, task func(context.Context) error, config scheduler.JobConfig) error {
+			return app.schedule(crontab, msg.Namespace, task, config)
+		},
+		ScheduleDispatch: func(crontab, name string, payload []byte, config job.DispatchConfig, schedule scheduler.JobConfig) error {
+			return app.scheduleDispatch(crontab, msg.Namespace, name, payload, config, schedule)
+		},
+		ScheduledJobs:      func() []gocron.Job { return app.scheduledJobs(msg.Namespace) },
+		RemoveScheduledJob: func(id uuid.UUID) error { return app.removeScheduledJob(msg.Namespace, id) },
 	}), msg.Payload)
 
 	if runErr == nil {

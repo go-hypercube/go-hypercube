@@ -1,8 +1,16 @@
 package job
 
 import (
+	"errors"
+
 	"github.com/go-hypercube/go-hypercube/namespaced"
 )
+
+// ErrNilJob indicates that a nil job was supplied for registration.
+var ErrNilJob = errors.New("job must not be nil")
+
+// ErrEmptyName indicates that a registered job has no name.
+var ErrEmptyName = errors.New("job name must not be empty")
 
 type Job interface {
 	Name() string

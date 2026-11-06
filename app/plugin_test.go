@@ -12,6 +12,13 @@ import (
 // ---- UsePlugin ----
 
 func TestUsePlugin(t *testing.T) {
+	t.Run("rejects empty names without registering the batch", func(t *testing.T) {
+		app := &App{}
+		err := app.UsePlugin(&fakePlugin{name: "valid"}, &fakePlugin{})
+		require.ErrorIs(t, err, plugin.ErrEmptyName)
+		require.Empty(t, app.Plugins())
+	})
+
 	t.Run("registers plugins successfully", func(t *testing.T) {
 		app := &App{}
 		p1 := &fakePlugin{name: "auth", version: "v1.0.0"}
